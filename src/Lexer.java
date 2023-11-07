@@ -9,11 +9,14 @@ public class Lexer {
     private char c;
     private HashMap<String, LexType> reserveWords;
 
-    public Lexer(String source) {
+    private ExceptionController ec;
+
+    public Lexer(String source,ExceptionController ec) {
         this.source = source;
         this.curPos = 0;
         this.line = 1;
-        reserveWords = new HashMap<>();
+        this.ec = ec;
+        this.reserveWords = new HashMap<>();
         reserveWordsBook();
     }
 
@@ -295,14 +298,33 @@ public class Lexer {
         StringBuilder stringBuilder = new StringBuilder();
         stringBuilder.append('"');
         getChar();
+        boolean exceptionA = false;
+        boolean exceptionB = false;
+        boolean exceptionC = false;
         while(c != '"') {
             if(c == '\\') {
                 getChar();
+                stringBuilder.append('\\');
                 if (c == 'n') {
-                    stringBuilder.append('\\');
                     stringBuilder.append('n');
+                } else {
+                    exceptionA =true;
+                    continue;
                 }
-            } else {
+            } else if (c == '%') {
+                getChar();
+                stringBuilder.append('%');
+                if (c == 'd') {
+                    stringBuilder.append('d');
+                } else {
+                    exceptionB =true;
+                    continue;
+                }
+            }
+            else {
+                if (!(c == 32 || c == 33 || (c >= 40 && c <= 126))) {
+                    exceptionC = true;
+                }
                 stringBuilder.append(c);
             }
             getChar();
@@ -310,6 +332,10 @@ public class Lexer {
         stringBuilder.append('"');
         String s = stringBuilder.toString();
         getChar();
-        return new Token(s,line,LexType.STRCON);
+        Token tokenOfFormatStr = new Token(s,line,LexType.STRCON);
+        if (exceptionA || exceptionB || exceptionC) {
+            ec.addException(HandleException.makeStrFormatErr(tokenOfFormatStr));
+        }
+        return tokenOfFormatStr;
     }
 }

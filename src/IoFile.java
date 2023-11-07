@@ -44,4 +44,15 @@ public class IoFile {
             throw new RuntimeException(e);
         }
     }
+
+    public static void outputContentToFile_error(String s) {
+        try {
+            File file = new File("error.txt");
+            FileWriter fileWriter = new FileWriter(file.getName());
+            fileWriter.write(s);
+            fileWriter.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

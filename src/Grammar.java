@@ -7,10 +7,13 @@ public class Grammar {
 
     private int tokenLength;
 
-    public Grammar(ArrayList<Token> tokens) {
+    private ExceptionController ec;
+
+    public Grammar(ArrayList<Token> tokens, ExceptionController ec) {
         this.tokens = tokens;
         nowIndex = 0;
         tokenLength = tokens.size();
+        this.ec = ec;
     }
 
     public boolean nowTokenTypeCompare(int index,LexType lexType) {
@@ -67,10 +70,11 @@ public class Grammar {
             grammarNodes.add(getLeaf(LexType.COMMA));
             grammarNodes.add(getConstDef());
         }
-        try {
-            grammarNodes.add(getLeaf(LexType.SEMICN));
-        } catch (Exception e) {
-            System.err.println();
+        GrammarNode tmpNode;
+        if ((tmpNode = getLeaf(LexType.SEMICN)) != null) {
+            grammarNodes.add(tmpNode);
+        } else {
+            ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
         }
         return new GrammarNode("ConstDecl",grammarNodes);
     }
@@ -83,21 +87,24 @@ public class Grammar {
             grammarNodes.add(getLeaf(LexType.COMMA));
             grammarNodes.add(getVarDef());
         }
-        try {
-            grammarNodes.add(getLeaf(LexType.SEMICN));
-        } catch (Exception e) {
-            System.err.println();
+        GrammarNode tmpNode;
+        if ((tmpNode = getLeaf(LexType.SEMICN)) != null) {
+            grammarNodes.add(tmpNode);
+        } else {
+            ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
         }
         return new GrammarNode("VarDecl",grammarNodes);
     }
 
     public GrammarNode getLeaf(LexType lexType){
         Token token = tokens.get(nowIndex);
-        nowIndex++;
         if (!token.compareLexType(lexType)) {
-            System.err.println("getLeafErr--" + lexType+" " + nowIndex + "\n"+errTokenMessage());
+            // System.err.println("getLeafErr,should be type--" + lexType+ " nowIndex: " + nowIndex + "\n"+errTokenMessage());
+            return null;
+        } else {
+            nowIndex++; // 应该要假设没有丢失右括号或者封号 所以上面的不能++index
+            return token;
         }
-        return token;
     }
 
     public GrammarNode getBType() {
@@ -112,10 +119,11 @@ public class Grammar {
         while(whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.LBRACK)) {
             grammarNodes.add(getLeaf(LexType.LBRACK));
             grammarNodes.add(getConstExp());
-            try {
-                grammarNodes.add(getLeaf(LexType.RBRACK));
-            } catch (Exception e) {
-                System.err.println();
+            GrammarNode tmpNode;
+            if ((tmpNode = getLeaf(LexType.RBRACK)) != null) {
+                grammarNodes.add(tmpNode);
+            } else {
+                ec.addException(returnException(tokens.get(nowIndex-1),"k",LexType.RBRACK));
             }
         }
         grammarNodes.add(getLeaf(LexType.ASSIGN));
@@ -154,10 +162,11 @@ public class Grammar {
         while (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.LBRACK)) {
             grammarNodes.add(getLeaf(LexType.LBRACK));
             grammarNodes.add(getConstExp());
-            try {
-                grammarNodes.add(getLeaf(LexType.RBRACK));
-            } catch (Exception e) {
-                System.err.println();
+            GrammarNode tmpNode;
+            if ((tmpNode = getLeaf(LexType.RBRACK)) != null) {
+                grammarNodes.add(tmpNode);
+            } else {
+                ec.addException(returnException(tokens.get(nowIndex-1),"k",LexType.RBRACK));
             }
         }
         if (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.ASSIGN)) {
@@ -190,13 +199,14 @@ public class Grammar {
         grammarNodes.add(getFuncType());
         grammarNodes.add(getLeaf(LexType.IDENFR));
         grammarNodes.add(getLeaf(LexType.LPARENT));
-        if (whetherOutOfBound() && !nowTokenTypeCompare(nowIndex,LexType.RPARENT)) {
+        if (whetherOutOfBound() && !(nowTokenTypeCompare(nowIndex,LexType.RPARENT) || nowTokenTypeCompare(nowIndex,LexType.LBRACE))) { //无参少右括号情况
             grammarNodes.add(getFuncFParams());
         }
-        try {
-            grammarNodes.add(getLeaf(LexType.RPARENT));
-        } catch (Exception e) {
-            System.err.println();
+        GrammarNode tmpNode;
+        if ((tmpNode = getLeaf(LexType.RPARENT)) != null) {
+            grammarNodes.add(tmpNode);
+        } else {
+            ec.addException(returnException(tokens.get(nowIndex-1),"j",LexType.RPARENT));
         }
         grammarNodes.add(getBlock());
         return new GrammarNode("FuncDef",grammarNodes);
@@ -230,18 +240,20 @@ public class Grammar {
         grammarNodes.add(getLeaf(LexType.IDENFR));
         if (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.LBRACK)) {
             grammarNodes.add(getLeaf(LexType.LBRACK));
-            try {
-                grammarNodes.add(getLeaf(LexType.RBRACK));
-            } catch (Exception e) {
-                System.err.println();
+            GrammarNode tmpNode;
+            if ((tmpNode = getLeaf(LexType.RBRACK)) != null) {
+                grammarNodes.add(tmpNode);
+            } else {
+                ec.addException(returnException(tokens.get(nowIndex-1),"k",LexType.RBRACK));
             }
             while (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.LBRACK)) {
                 grammarNodes.add(getLeaf(LexType.LBRACK));
                 grammarNodes.add(getConstExp());
-                try {
-                    grammarNodes.add(getLeaf(LexType.RBRACK));
-                } catch (Exception e) {
-                    System.err.println();
+                GrammarNode tmpNode2;
+                if ((tmpNode2 = getLeaf(LexType.RBRACK)) != null) {
+                    grammarNodes.add(tmpNode2);
+                } else {
+                    ec.addException(returnException(tokens.get(nowIndex-1),"k",LexType.RBRACK));
                 }
             }
         }
@@ -253,10 +265,11 @@ public class Grammar {
         grammarNodes.add(getLeaf(LexType.INTTK));
         grammarNodes.add(getLeaf(LexType.MAINTK));
         grammarNodes.add(getLeaf(LexType.LPARENT));
-        try {
-            grammarNodes.add(getLeaf(LexType.RPARENT));
-        } catch (Exception e) {
-            System.err.println();
+        GrammarNode tmpNode;
+        if ((tmpNode = getLeaf(LexType.RPARENT)) != null) {
+            grammarNodes.add(tmpNode);
+        } else {
+            ec.addException(returnException(tokens.get(nowIndex-1),"j",LexType.RPARENT));
         }
         grammarNodes.add(getBlock());
         return new GrammarNode("MainFuncDef",grammarNodes);
@@ -301,27 +314,30 @@ public class Grammar {
                 solveForStmt(grammarNodes);
             } else if (nowTokenTypeCompare(nowIndex,LexType.BREAKTK)) {
                 grammarNodes.add(getLeaf(LexType.BREAKTK));
-                try {
-                    grammarNodes.add(getLeaf(LexType.SEMICN));
-                } catch (Exception e) {
-                    System.err.println();
+                GrammarNode tmpNode;
+                if ((tmpNode = getLeaf(LexType.SEMICN)) != null) {
+                    grammarNodes.add(tmpNode);
+                } else {
+                    ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
                 }
             } else if (nowTokenTypeCompare(nowIndex,LexType.CONTINUETK)) {
                 grammarNodes.add(getLeaf(LexType.CONTINUETK));
-                try {
-                    grammarNodes.add(getLeaf(LexType.SEMICN));
-                } catch (Exception e) {
-                    System.err.println();
+                GrammarNode tmpNode;
+                if ((tmpNode = getLeaf(LexType.SEMICN)) != null) {
+                    grammarNodes.add(tmpNode);
+                } else {
+                    ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
                 }
             } else if (nowTokenTypeCompare(nowIndex,LexType.RETURNTK)) {
                 grammarNodes.add(getLeaf(LexType.RETURNTK));
-                if (whetherOutOfBound() && !nowTokenTypeCompare(nowIndex,LexType.SEMICN)) {
+                if (whetherOutOfBound() && !(nowTokenTypeCompare(nowIndex,LexType.SEMICN) || nowTokenTypeCompare(nowIndex,LexType.RBRACE))){
                     grammarNodes.add(getExp());
                 }
-                try {
-                    grammarNodes.add(getLeaf(LexType.SEMICN));
-                } catch (Exception e) {
-                    System.err.println();
+                GrammarNode tmpNode;
+                if ((tmpNode = getLeaf(LexType.SEMICN)) != null) {
+                    grammarNodes.add(tmpNode);
+                } else {
+                    ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
                 }
             } else if (nowTokenTypeCompare(nowIndex,LexType.PRINTFTK)) {
                 solvePrintfStmt(grammarNodes);
@@ -336,28 +352,38 @@ public class Grammar {
                     if (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.GETINTTK)) {
                         grammarNodes.add(getLeaf(LexType.GETINTTK));
                         grammarNodes.add(getLeaf(LexType.LPARENT));
-                        grammarNodes.add(getLeaf(LexType.RPARENT));
-                        try {
-                            grammarNodes.add(getLeaf(LexType.SEMICN));
-                        } catch (Exception e) {
-                            System.err.println();
+
+                        GrammarNode tmpNode;
+                        if ((tmpNode = getLeaf(LexType.RPARENT)) != null) {
+                            grammarNodes.add(tmpNode);
+                        } else {
+                            ec.addException(returnException(tokens.get(nowIndex-1),"j",LexType.RPARENT));
+                        }
+
+                        GrammarNode tmpNode2;
+                        if ((tmpNode2 = getLeaf(LexType.SEMICN)) != null) {
+                            grammarNodes.add(tmpNode2);
+                        } else {
+                            ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
                         }
 
                     } else {
                         grammarNodes.add(getExp());
-                        try {
-                            grammarNodes.add(getLeaf(LexType.SEMICN));
-                        } catch (Exception e) {
-                            System.err.println();
+                        GrammarNode tmpNode;
+                        if ((tmpNode = getLeaf(LexType.SEMICN)) != null) {
+                            grammarNodes.add(tmpNode);
+                        } else {
+                            ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
                         }
                     }
                 } else {
                     // 说明是Exp的情况
                     grammarNodes.add(getExp());
-                    try {
-                        grammarNodes.add(getLeaf(LexType.SEMICN));
-                    } catch (Exception e) {
-                        System.err.println();
+                    GrammarNode tmpNode;
+                    if ((tmpNode = getLeaf(LexType.SEMICN)) != null) {
+                        grammarNodes.add(tmpNode);
+                    } else {
+                        ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
                     }
                 }
             }
@@ -369,10 +395,11 @@ public class Grammar {
         grammarNodes.add(getLeaf(LexType.IFTK));
         grammarNodes.add(getLeaf(LexType.LPARENT));
         grammarNodes.add(getCond());
-        try {
-            grammarNodes.add(getLeaf(LexType.RPARENT));
-        } catch (Exception e) {
-            System.err.println();
+        GrammarNode tmpNode;
+        if ((tmpNode = getLeaf(LexType.RPARENT)) != null) {
+            grammarNodes.add(tmpNode);
+        } else {
+            ec.addException(returnException(tokens.get(nowIndex-1),"j",LexType.RPARENT));
         }
         grammarNodes.add(getStmt());
         if (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.ELSETK)) {
@@ -401,10 +428,11 @@ public class Grammar {
         if (whetherOutOfBound() && !nowTokenTypeCompare(nowIndex,LexType.RPARENT)) {
             grammarNodes.add(getForStmt());
         }
-        try {
-            grammarNodes.add(getLeaf(LexType.RPARENT));
-        } catch (Exception e) {
-            System.err.println();
+        GrammarNode tmpNode;
+        if ((tmpNode = getLeaf(LexType.RPARENT)) != null) {
+            grammarNodes.add(tmpNode);
+        } else {
+            ec.addException(returnException(tokens.get(nowIndex-1),"j",LexType.RPARENT));
         }
         grammarNodes.add(getStmt());
     }
@@ -425,15 +453,17 @@ public class Grammar {
             grammarNodes.add(getLeaf(LexType.COMMA));
             grammarNodes.add(getExp());
         }
-        try {
-            grammarNodes.add(getLeaf(LexType.RPARENT));
-        } catch (Exception e) {
-            System.err.println();
+        GrammarNode tmpNode;
+        if ((tmpNode = getLeaf(LexType.RPARENT)) != null) {
+            grammarNodes.add(tmpNode);
+        } else {
+            ec.addException(returnException(tokens.get(nowIndex-1),"j",LexType.RPARENT));
         }
-        try {
-            grammarNodes.add(getLeaf(LexType.SEMICN));
-        } catch (Exception e) {
-            System.err.println();
+        GrammarNode tmpNode2;
+        if ((tmpNode2 = getLeaf(LexType.SEMICN)) != null) {
+            grammarNodes.add(tmpNode2);
+        } else {
+            ec.addException(returnException(tokens.get(nowIndex-1),"i",LexType.SEMICN));
         }
     }
 
@@ -443,10 +473,11 @@ public class Grammar {
         while (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.LBRACK)) {
             grammarNodes.add(getLeaf(LexType.LBRACK));
             grammarNodes.add(getExp());
-            try {
-                grammarNodes.add(getLeaf(LexType.RBRACK));
-            } catch (Exception e) {
-                System.err.println();
+            GrammarNode tmpNode;
+            if ((tmpNode = getLeaf(LexType.RBRACK)) != null) {
+                grammarNodes.add(tmpNode);
+            } else {
+                ec.addException(returnException(tokens.get(nowIndex-1),"k",LexType.RBRACK));
             }
         }
         return new GrammarNode("LVal",grammarNodes);
@@ -464,10 +495,11 @@ public class Grammar {
         if (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.LPARENT)) {
             grammarNodes.add(getLeaf(LexType.LPARENT));
             grammarNodes.add(getExp());
-            try {
-                grammarNodes.add(getLeaf(LexType.RPARENT));
-            } catch (Exception e) {
-                System.err.println();
+            GrammarNode tmpNode;
+            if ((tmpNode = getLeaf(LexType.RPARENT)) != null) {
+                grammarNodes.add(tmpNode);
+            } else {
+                ec.addException(returnException(tokens.get(nowIndex-1),"j",LexType.RPARENT));
             }
         } else if (whetherOutOfBound() && nowTokenTypeCompare(nowIndex,LexType.INTCON)) {
             grammarNodes.add(getNumber());
@@ -492,13 +524,14 @@ public class Grammar {
         ) {
             grammarNodes.add(getLeaf(LexType.IDENFR));
             grammarNodes.add(getLeaf(LexType.LPARENT));
-            if (whetherOutOfBound() && !nowTokenTypeCompare(nowIndex,LexType.RPARENT)) {
+            if (whetherOutOfBound() && !(nowTokenTypeCompare(nowIndex,LexType.RPARENT) || nowTokenTypeCompare(nowIndex,LexType.SEMICN))) {
                 grammarNodes.add(getFuncRParams());
             }
-            try {
-                grammarNodes.add(getLeaf(LexType.RPARENT));
-            } catch (Exception e) {
-                System.err.println();
+            GrammarNode tmpNode;
+            if ((tmpNode = getLeaf(LexType.RPARENT)) != null) {
+                grammarNodes.add(tmpNode);
+            } else {
+                ec.addException(returnException(tokens.get(nowIndex-1),"j",LexType.RPARENT));
             }
         } else if (whetherOutOfBound() &&
                 (nowTokenTypeCompare(nowIndex,LexType.PLUS) ||
@@ -675,7 +708,7 @@ public class Grammar {
         return new GrammarNode("LOrExp",grammarNodes);
     }
     public String errTokenMessage() {
-        return tokens.get(nowIndex).getToken()+" "+tokens.get(nowIndex).getLineNum();
+        return "errorIndexInfo:\ntoken name is: " + tokens.get(nowIndex).getToken() + ", errorToken in file's line: "+tokens.get(nowIndex).getLineNum();
     }
 
     public boolean whetherOutOfBound() {
@@ -685,11 +718,12 @@ public class Grammar {
         return nowIndex < tokenLength;
     }
 
-    public void grammarStart() {
+    public GrammarNode grammarStart() {
         GrammarNode main = getCompUnit();
         StringBuilder output = new StringBuilder();
         outputParser(main,output);
         IoFile.outputContentToFile(output.toString());
+        return main;
     }
 
     public void outputParser(GrammarNode main,StringBuilder output) {
@@ -698,6 +732,7 @@ public class Grammar {
             if (node.getNodes() == null) { //查询到叶节点
                 Token token = (Token)node;
                 output.append(token.getLexType()).append(" ").append(token.getToken()).append('\n');
+                //System.out.println(token.getLexType() + " " + token.getToken());
             }
             else {
                 outputParser(node,output);
@@ -725,5 +760,11 @@ public class Grammar {
             }
         }
         return hasAssign;
+    }
+
+    public MyException returnException(Token token,String errorType, LexType lexType) {
+        String errorInfo = "getLeafErr,should be type--" + lexType +
+                " nowIndex and errorIndexInfo: " + nowIndex + "\n"+errTokenMessage();
+        return new MyException(token.getLineNum(), errorType, errorInfo);
     }
 }

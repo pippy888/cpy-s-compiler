@@ -2,16 +2,19 @@ import java.util.ArrayList;
 
 public class Compiler {
     public static void main(String[] args) {
-        ArrayList<Token> tokens = getLexer();
-        getGrammar(tokens);
+        ExceptionController ec = new ExceptionController();
+        ArrayList<Token> tokens = getLexer(ec);
+        GrammarNode ast = getGrammar(tokens,ec);
+        VisitAST visitAST = new VisitAST(ast,ec);
+        visitAST.getSymbolTableAndHandleError();
     }
 
-    public static ArrayList<Token> getLexer() {
+    public static ArrayList<Token> getLexer(ExceptionController ec) {
         StringBuilder stringBuilder = IoFile.readFileByBytes("testfile.txt");
         if (stringBuilder != null) {
             // source:源程序字符串
             String source = stringBuilder.toString();
-            Lexer lexer = new Lexer(source);
+            Lexer lexer = new Lexer(source,ec);
             lexer.begin();
             Token token = lexer.next();
             StringBuilder output = new StringBuilder();
@@ -28,8 +31,9 @@ public class Compiler {
         return null;
     }
 
-    public static void getGrammar(ArrayList<Token> tokens) {
-        Grammar grammar = new Grammar(tokens);
-        grammar.grammarStart();
+    public static GrammarNode getGrammar(ArrayList<Token> tokens,ExceptionController ec) {
+        Grammar grammar = new Grammar(tokens,ec);
+        GrammarNode ast = grammar.grammarStart();
+        return ast;
     }
 }

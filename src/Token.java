@@ -4,7 +4,7 @@ public class Token extends GrammarNode{
     private LexType lexType;
 
     public Token(String token,int lineNum,LexType lexType) {
-        super(null,null);//叶节点nodes是空
+        super(token,null);//叶节点nodes是空
         this.token = token;
         this.lineNum = lineNum;
         this.lexType = lexType;
