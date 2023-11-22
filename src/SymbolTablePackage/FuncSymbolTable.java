@@ -22,7 +22,7 @@ public class FuncSymbolTable extends SymbolTable{
         }
         for (SymbolTable var : params.getSymbolTables()) {
             if (var instanceof VarSymbolTable) {
-                if (((VarSymbolTable) var).isParameter) {
+                if (((VarSymbolTable) var).isParameter()) {
                     count++;
                 }
             }
@@ -40,5 +40,9 @@ public class FuncSymbolTable extends SymbolTable{
 
     public void setParams(BlockSymbolTable blockSymbolTable) {
         params = blockSymbolTable;
+    }
+
+    public BlockSymbolTable getParams() {
+        return params;
     }
 }

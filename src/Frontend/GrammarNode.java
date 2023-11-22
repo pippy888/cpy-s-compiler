@@ -1,3 +1,5 @@
+package Frontend;
+
 import java.util.ArrayList;
 
 public class GrammarNode {

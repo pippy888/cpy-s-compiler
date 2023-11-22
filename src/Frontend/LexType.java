@@ -1,3 +1,5 @@
+package Frontend;
+
 public enum LexType {
     IDENFR,
     NOT,

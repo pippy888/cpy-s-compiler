@@ -23,6 +23,56 @@ public class BlockSymbolTable extends SymbolTable{
     public BlockSymbolTable getFatherTable() {
         return fatherTable;
     }
+
+    public void setTagForVar(String name, String tag) {
+        for (SymbolTable symbolTable : symbolTables) {
+            if (symbolTable instanceof  VarSymbolTable && symbolTable.getName().equals(name)) {
+                symbolTable.setTag(tag);
+            }
+        }
+    }
+
+    public VarSymbolTable searchVar(String name,BlockSymbolTable fatherTable,boolean define) {
+        for (SymbolTable symbolTable : fatherTable.getSymbolTables()) {
+            if (symbolTable instanceof  VarSymbolTable && symbolTable.getName().equals(name)) {
+                if (!define && symbolTable.getTag() == null) {
+                    //不是定义语句，是引用语句，而且引用了未定义的变量（type==null)
+                    break;
+                }
+                return (VarSymbolTable) symbolTable;
+            }
+        }
+        if (fatherTable.getFatherTable() != null) {
+            return searchVar(name,fatherTable.getFatherTable(),define);
+        } else {
+            return null;
+        }
+    }
+
+    public FuncSymbolTable searchFunction(String name,BlockSymbolTable mainTable) {
+        for (SymbolTable symbolTable : mainTable.getSymbolTables()) {
+            if (symbolTable instanceof  FuncSymbolTable && symbolTable.getName().equals(name)) {
+                return (FuncSymbolTable) symbolTable;
+            }
+        }
+        System.err.println("searchFunctionError!");
+        return null;
+    }
+
+    public BlockSymbolTable searchBlockSymbolTable(int numberOfBlockSymbolTable, BlockSymbolTable fatherTable) {
+        int hadFound = 0;
+        for (SymbolTable symbolTable : fatherTable.getSymbolTables()) {
+            if (symbolTable instanceof  BlockSymbolTable ) {
+                if (hadFound == numberOfBlockSymbolTable) {
+                    return (BlockSymbolTable) symbolTable;
+                }
+                else {
+                    hadFound++;
+                }
+            }
+        }
+        return null;
+    }
 }
 
 

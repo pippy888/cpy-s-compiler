@@ -1,3 +1,5 @@
+package Frontend;
+
 import SymbolTablePackage.SymbolTable;
 
 public class HandleException {

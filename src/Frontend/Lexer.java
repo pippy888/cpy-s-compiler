@@ -1,5 +1,6 @@
+package Frontend;
+
 import java.util.HashMap;
-import java.util.regex.Pattern;
 
 public class Lexer {
     private String source;

@@ -1,4 +1,4 @@
-import java.util.Comparator;
+package Frontend;
 
 public class MyException implements Comparable<MyException> {
     private int line;

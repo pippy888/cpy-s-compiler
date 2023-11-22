@@ -1,3 +1,16 @@
+import AST.ASTroot;
+import AST.BuildAST;
+import Frontend.ExceptionController;
+import Frontend.Grammar;
+import Frontend.GrammarNode;
+import Frontend.IoFile;
+import Frontend.Lexer;
+import Frontend.Token;
+import Frontend.VisitAST;
+import Ir.Component.Model;
+import Ir.Generator;
+import SymbolTablePackage.BlockSymbolTable;
+
 import java.util.ArrayList;
 
 public class Compiler {
@@ -6,7 +19,11 @@ public class Compiler {
         ArrayList<Token> tokens = getLexer(ec);
         GrammarNode ast = getGrammar(tokens,ec);
         VisitAST visitAST = new VisitAST(ast,ec);
-        visitAST.getSymbolTableAndHandleError();
+        BlockSymbolTable table = visitAST.getSymbolTableAndHandleError();
+        BuildAST buildAST = new BuildAST(ast);
+        ASTroot asTroot = buildAST.getRoot();
+        Generator generator = new Generator(table,asTroot);
+        Model model = generator.run();
     }
 
     public static ArrayList<Token> getLexer(ExceptionController ec) {

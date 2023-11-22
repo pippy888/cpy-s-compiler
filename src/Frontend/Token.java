@@ -1,3 +1,5 @@
+package Frontend;
+
 public class Token extends GrammarNode{
     private String token;
     private int lineNum;

@@ -1,3 +1,5 @@
+package Frontend;
+
 import java.util.ArrayList;
 
 public class Grammar {
@@ -745,7 +747,7 @@ public class Grammar {
             return;
         } else {
             //System.out.println();
-            //IoFile.outputContentToFile();
+            //Frontend.IoFile.outputContentToFile();
             output.append('<').append(main.getNodeName()).append('>').append('\n');
         }
     }

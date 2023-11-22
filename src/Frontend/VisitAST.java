@@ -1,3 +1,5 @@
+package Frontend;
+
 import SymbolTablePackage.BlockSymbolTable;
 import SymbolTablePackage.FuncSymbolTable;
 import SymbolTablePackage.SymbolTable;
@@ -5,9 +7,7 @@ import SymbolTablePackage.SymbolType;
 import SymbolTablePackage.Value;
 import SymbolTablePackage.VarSymbolTable;
 
-import java.awt.color.ICC_ColorSpace;
 import java.util.ArrayList;
-import java.util.regex.Pattern;
 
 public class VisitAST {
     private ExceptionController ec;
@@ -26,16 +26,17 @@ public class VisitAST {
         //把整个文件，全局？看作一个代码块
     }
 
-    public void getSymbolTableAndHandleError() {
+    public BlockSymbolTable getSymbolTableAndHandleError() {
         runAST();
         String output = outputEcError();
         IoFile.outputContentToFile_error(output);
+        return stackSymbol;
     }
 
     public void runAST() {
         for (GrammarNode node : ast.getNodes()) {
             if (node.getNodeName().equals("Decl")) {
-                handleDecl(this.stackSymbol,node);
+                handleDecl(this.stackSymbol,node,true);
             } else if (node.getNodeName().equals("FuncDef")) {
                 handleFuncDef(this.stackSymbol,node);
             } else if (node.getNodeName().equals("MainFuncDef")) {
@@ -44,7 +45,7 @@ public class VisitAST {
         }
     }
 
-    public void handleDecl(BlockSymbolTable fatherTable,GrammarNode node) {
+    public void handleDecl(BlockSymbolTable fatherTable,GrammarNode node,boolean isGlobal) {
         int line = 0;
         boolean isConst = false;
         SymbolType type = SymbolType.var;
@@ -75,7 +76,7 @@ public class VisitAST {
                         } else if (token.compareLexType(LexType.LBRACK)) {
                             bracket++;
                         }  /* 数字可以是初始化值 可能要结合赋值符号判断
-                        else if (token.compareLexType(LexType.INTCON)) {
+                        else if (token.compareLexType(Frontend.LexType.INTCON)) {
                             if (bracket == 1) {
                                 n1 = Integer.parseInt(token.getToken());
                             } else if (bracket == 2) {
@@ -85,7 +86,7 @@ public class VisitAST {
                         */
                     }
                 }
-                VarSymbolTable var = new VarSymbolTable(this.nowLevel,type,line,isConst,name,n1,n2,bracket,false);
+                VarSymbolTable var = new VarSymbolTable(this.nowLevel,type,line,isConst,name,n1,n2,bracket,false,isGlobal);
                 addSymbol(fatherTable,var);
             }
         }
@@ -106,10 +107,10 @@ public class VisitAST {
                 token = (Token) funcDefNode;
                 funcName = token.getToken();
                 funcLine = token.getLineNum();
+                paras = new BlockSymbolTable(nowLevel,funcLine,"paras",fatherTable);
                 funcSymbolTable = new FuncSymbolTable(nowLevel,SymbolType.function,funcLine,funcName,returnType,paras);
                 addSymbol(fatherTable,funcSymbolTable); //先加入符号表，防止定义递归调用，后面只有para，调用setpara方法设置
                 nowLevel++; //
-                paras = new BlockSymbolTable(nowLevel,funcLine,"paras",fatherTable);
             } else if (funcDefNode.getNodeName().equals("FuncFParams")) {
                 boolean hasFuncPara = false; //最后一个函数参数录入符号表
                 String paraName = null;
@@ -133,7 +134,7 @@ public class VisitAST {
                                 hasFuncPara = true;
                             } else if (token.compareLexType(LexType.LBRACK)) {
                                 bracket++;
-                            }/* else if (token.compareLexType(LexType.INTCON)) { //不管数组值
+                            }/* else if (token.compareLexType(Frontend.LexType.INTCON)) { //不管数组值
                                 if (bracket == 1) {
                                     n1 = Integer.parseInt(token.getToken());
                                 } else if(bracket == 2){
@@ -143,12 +144,12 @@ public class VisitAST {
                         }
                     }  else if (para instanceof Token && ((Token) para).compareLexType(LexType.COMMA)) {
                         // 检测到逗号的时候
-                        VarSymbolTable paraVar = new VarSymbolTable(nowLevel,SymbolType.var,paraLine,false,paraName,n1,n2,bracket,true);
+                        VarSymbolTable paraVar = new VarSymbolTable(nowLevel,SymbolType.var,paraLine,false,paraName,n1,n2,bracket,true,false);
                         addSymbol(paras,paraVar);
                     }
                 }
                 if (hasFuncPara) { // 最后一个参数
-                    VarSymbolTable paraVar = new VarSymbolTable(nowLevel,SymbolType.var,paraLine,false,paraName,n1,n2,bracket,true);
+                    VarSymbolTable paraVar = new VarSymbolTable(nowLevel,SymbolType.var,paraLine,false,paraName,n1,n2,bracket,true,false);
                     addSymbol(paras,paraVar);
                 }
                 funcSymbolTable.setParams(paras);
@@ -176,7 +177,7 @@ public class VisitAST {
             GrammarNode node = block.getNodes().get(i). getNodes().get(0);
             //blockItem中是Decl或者Stmt
             if (node.getNodeName().equals("Decl")) {
-                handleDecl(fatherTable,node);
+                handleDecl(fatherTable,node,false);
             } else { //Stmt
                 handleStmt(node,returnType,fatherTable);
                 if (i == block.getNodes().size()-2){
@@ -200,7 +201,7 @@ public class VisitAST {
             String name = tokenLVal.getToken();
             int line = tokenLVal.getLineNum();
             VarSymbolTable var = (VarSymbolTable) findAllSymbolTable(name,line,fatherTable,SymbolType.var);
-            //Token tokenAssign = (Token) stmtDetailNode.getNodes().get(1);
+            //Frontend.Token tokenAssign = (Frontend.Token) stmtDetailNode.getNodes().get(1);
             if (var != null && var.isConst()) { //改const
                 ec.addException(HandleException.makeReviseConstException(tokenLVal));
             }
@@ -219,7 +220,7 @@ public class VisitAST {
                     String name = LValNode.getToken();
                     int line = LValNode.getLineNum();
                     VarSymbolTable var = (VarSymbolTable) findAllSymbolTable(name,line,fatherTable,SymbolType.var);
-                    //Token tokenAssign = (Token) stmtDetailNode.getNodes().get(1);
+                    //Frontend.Token tokenAssign = (Frontend.Token) stmtDetailNode.getNodes().get(1);
                     if (var != null && var.isConst()) { //改const
                         ec.addException(HandleException.makeReviseConstException(LValNode));
                     }
@@ -241,6 +242,7 @@ public class VisitAST {
             nowLevel++;
             BlockSymbolTable blockSymbolTable = new BlockSymbolTable(nowLevel,((Token)stmtDetailNode.getNodes().get(0)).getLineNum(),"commonBlock",fatherTable);
             handleBlock(stmtDetailNode,"",blockSymbolTable); //不是函数块returnType不需要继承
+            addSymbol(fatherTable,blockSymbolTable);
         } else if (stmtDetailNode instanceof Token && ( ((Token) stmtDetailNode) .compareLexType(LexType.IFTK))) {
             if (node.getNodes().size() == 5) {
                 //没有else
