@@ -3,12 +3,15 @@ package Ir.IRInstr;
 public class AllocaIR extends Instr{
     private String info;
 
-    public AllocaIR(String tag) {
+    private String type;
+
+    public AllocaIR(String tag,String type) {
         this.info = tag;
+        this.type = type;
     }
 
     public String genIr() {
-        String s = info + " = "+ "alloca i32";
+        String s = info + " = "+ "alloca " + type;
         return s;
     }
 }

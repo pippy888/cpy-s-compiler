@@ -36,7 +36,8 @@ public class BlockSymbolTable extends SymbolTable{
         for (SymbolTable symbolTable : fatherTable.getSymbolTables()) {
             if (symbolTable instanceof  VarSymbolTable && symbolTable.getName().equals(name)) {
                 if (!define && symbolTable.getTag() == null) {
-                    //不是定义语句，是引用语句，而且引用了未定义的变量（type==null)
+                    //不是定义语句，是引用语句，而且引用了未定义的变量（type==null) 原因是当前块中可能新定义了什么一样的名字，但要去父块找，
+                    // symbolTable.getTag() == null 约束了未定义变量
                     break;
                 }
                 return (VarSymbolTable) symbolTable;

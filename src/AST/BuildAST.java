@@ -52,9 +52,9 @@ public class BuildAST {
         if (node.getNodes().size() == 1) {
             return new VarDeclStmt(isGlobal,isConst,isFuncPara,null,name);
         }
-        else if (!assertNodeIsTokenAndCompare(node.getNodes().get(node.getNodes().size()-2),LexType.ASSIGN)) {
+        else if (!(node.getNodes().get(node.getNodes().size()-2) instanceof Token token && token.compareLexType(LexType.ASSIGN))) {
             //倒二个不是=
-            if (assertNodeIsTokenAndCompare(node.getNodes().get(1),LexType.LBRACK )) {
+            if (node.getNodes().get(1) instanceof Token token && token.compareLexType(LexType.LBRACK)) {
                 //数组
                 if (node.getNodes().size() == 4) {
                     //一维数组
@@ -99,7 +99,7 @@ public class BuildAST {
                 ComputeStmt constStmt2 = getComputerStmt(constExp2);
                 int constValue2 = constStmt2.getValue(null);
 
-                GrammarNode initial = node.getNodes().get(9);
+                GrammarNode initial = node.getNodes().get(8);
                 ArrayList<ComputeStmt> list = getInitialValue(initial);
 
                 return new ArrDeclStmt(isGlobal,isConst,isFuncPara,list,constValue1,constValue2,2,name);
@@ -191,6 +191,7 @@ public class BuildAST {
                 //寻找封号
                 int semicn1 = 0;
                 int semicn2 = 0;
+                Stmt stmt = null;
                 for (GrammarNode tmpNode : stmts) {
                     if (tmpNode instanceof Token tokenFor && tokenFor.compareLexType(LexType.SEMICN)) {
                         if (semicn1 == 0) {
@@ -198,6 +199,10 @@ public class BuildAST {
                         } else {
                             semicn2 = stmts.indexOf(tmpNode);
                         }
+                    }
+
+                    if (tmpNode.getNodeName().equals("Stmt")) {
+                        stmt = getStmt(tmpNode);
                     }
                 }
                 LVal lVal1;
@@ -232,7 +237,7 @@ public class BuildAST {
                     computeStmt2 = getComputerStmt(stmts.get(semicn2+1).getNodes().get(2));
                 }
                 //3
-                ForStmt forStmt = new ForStmt(lVal1,lVal2,computeStmt1,computeStmt2,condStmt);
+                ForStmt forStmt = new ForStmt(lVal1,lVal2,computeStmt1,computeStmt2,condStmt,stmt);
                 return forStmt;
             } else if (token.compareLexType(LexType.BREAKTK)) {
                 return new BreakStmt();
@@ -290,25 +295,25 @@ public class BuildAST {
     public LVal getLVal(GrammarNode priNode) { //priNode是LVal节点
         String name = priNode.getNodes().get(0).getNodeName();
         if (priNode.getNodes().size() == 1) {
-            return new LVal(name,0,0,0);
+            return new LVal(name,0,null,null);
         }
         else if (priNode.getNodes().size() == 4) {
             //一维数组
             GrammarNode constExp = priNode.getNodes().get(2);
             ComputeStmt constStmt = BuildAST.getComputerStmt(constExp);
-            int constValue = constStmt.getValue(null);
-            return new LVal(name,1,0,constValue);
+            //int constValue = constStmt.getValue(null);
+            return new LVal(name,1,null,constStmt);
 
         } else if (priNode.getNodes().size() == 7) {
             GrammarNode constExp1 = priNode.getNodes().get(2);
             ComputeStmt constStmt1 = BuildAST.getComputerStmt(constExp1);
-            int constValue1 = constStmt1.getValue(null);
+            //int constValue1 = constStmt1.getValue(null);
 
             GrammarNode constExp2 = priNode.getNodes().get(5);
             ComputeStmt constStmt2 = BuildAST.getComputerStmt(constExp2);
-            int constValue2 = constStmt2.getValue(null);
+            //int constValue2 = constStmt2.getValue(null);
 
-            return  new LVal(name,2,constValue1,constValue2);
+            return  new LVal(name,2,constStmt1,constStmt2);
         } else {
             System.err.println("getLValError!");
         }

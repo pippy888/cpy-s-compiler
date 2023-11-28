@@ -212,8 +212,8 @@ public class VisitAST {
         } else if (stmtDetailNode.getNodeName().equals("Exp")) {
             handleExp(stmtDetailNode,fatherTable);
         } else if (stmtDetailNode instanceof Token token && token.compareLexType(LexType.FORTK)) {
-            nowLevel++;
-            BlockSymbolTable forBlock = new BlockSymbolTable(nowLevel, token.getLineNum(), "for",fatherTable);
+//            nowLevel++;
+//            BlockSymbolTable forBlock = new BlockSymbolTable(nowLevel, token.getLineNum(), "for",fatherTable);
             for (GrammarNode forNodeDetail : node.getNodes()) {
                 if (forNodeDetail.getNodeName().equals("ForStmt")) {
                     Token LValNode = (Token) forNodeDetail.getNodes().get(0).getNodes().get(0);//forstmt -> lval -> idenfr
@@ -225,13 +225,13 @@ public class VisitAST {
                         ec.addException(HandleException.makeReviseConstException(LValNode));
                     }
                 } else if (forNodeDetail.getNodeName().equals("Stmt")) {
-                    tmpHasReturn = handleStmt(forNodeDetail,returnType,forBlock);
+                    tmpHasReturn = handleStmt(forNodeDetail,returnType,fatherTable);
                     if (tmpHasReturn) {
                         hasReturn = true;
                     }
                 }
             }
-            nowLevel--;
+            //addSymbol(fatherTable,forBlock);
         }  else if (stmtDetailNode instanceof Token && ( ((Token) stmtDetailNode) .compareLexType(LexType.CONTINUETK)) ||
                 stmtDetailNode instanceof Token && ( ((Token) stmtDetailNode) .compareLexType(LexType.BREAKTK))
         ) {
@@ -244,6 +244,7 @@ public class VisitAST {
             handleBlock(stmtDetailNode,"",blockSymbolTable); //不是函数块returnType不需要继承
             addSymbol(fatherTable,blockSymbolTable);
         } else if (stmtDetailNode instanceof Token && ( ((Token) stmtDetailNode) .compareLexType(LexType.IFTK))) {
+            nowLevel++;
             if (node.getNodes().size() == 5) {
                 //没有else
                 tmpHasReturn = handleStmt(node.getNodes().get(4), returnType, fatherTable);

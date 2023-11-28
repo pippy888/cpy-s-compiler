@@ -14,6 +14,9 @@ public class FuncDeclStmt extends Stmt{
 
     private CompoundStmt stmts;
 
+    private ArrayList<BasicBlock> blocks = new ArrayList<>();
+
+
     public FuncDeclStmt(String name, String returnType, ArrayList<VarDeclStmt> paras, CompoundStmt stmts) {
         super();
         this.name = name;
@@ -42,4 +45,7 @@ public class FuncDeclStmt extends Stmt{
         return new FuncDeclIR(name,returnType,paras);
     }
 
+    public ArrayList<BasicBlock> getBlocks() {
+        return blocks;
+    }
 }

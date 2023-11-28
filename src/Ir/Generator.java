@@ -4,6 +4,7 @@ import AST.ASTroot;
 import AST.AddExpStmt;
 import AST.ArrDeclStmt;
 import AST.AssignStmt;
+import AST.BasicBlock;
 import AST.BreakStmt;
 import AST.CallExpr;
 import AST.CompoundStmt;
@@ -34,6 +35,7 @@ import Ir.IRInstr.AllocaIR;
 import Ir.IRInstr.BrIR;
 import Ir.IRInstr.CallIR;
 import Ir.IRInstr.FuncDeclIR;
+import Ir.IRInstr.GetelementptrIR;
 import Ir.IRInstr.GlobalVarIr;
 import Ir.IRInstr.IcmpIR;
 import Ir.IRInstr.Instr;
@@ -54,6 +56,7 @@ import SymbolTablePackage.SymbolTable;
 import SymbolTablePackage.SymbolType;
 import SymbolTablePackage.VarSymbolTable;
 import java.util.ArrayList;
+import java.util.Stack;
 
 import Frontend.IoFile;
 
@@ -64,15 +67,24 @@ public class Generator {
     private BlockSymbolTable nowBlock;
 
     private SymbolTable nowSymbolTable;
+
+    private JumpUnit nowForStmt;
+
+    private BasicBlock nowBasicBlock;
+
+    private ArrayList<BasicBlock> blocks;
+
     public Generator(BlockSymbolTable table, ASTroot asTroot) {
         this.mainTable = table;
         this.asTroot = asTroot;
         this.nowReg = 0;
         this.nowBlock = table;
+        this.nowForStmt = null;
+        this.nowBasicBlock = null;
     }
 
     public int getReg() {
-        return this.nowReg++;
+        return nowReg++;
     }
 
     public Model run() {
@@ -103,24 +115,43 @@ public class Generator {
         String name = varDeclStmt.getName();
         String type = varDeclStmt.isConst() ? "constant" : "global";
         //数组
-
-        //
+        if (varDeclStmt instanceof ArrDeclStmt arrDeclStmt) {
+            VarSymbolTable var = fatherTable.searchVar(name, fatherTable, true);
+            var.setTag("@" + name);
+            int n1 = arrDeclStmt.getN1();
+            int n2 = arrDeclStmt.getN2();
+            var.setN1(n1);
+            var.setN2(n2);
+            int value_arrayElement;
+            if (arrDeclStmt.getValue() != null) {
+                for (ComputeStmt computeStmt : arrDeclStmt.getValue()) {
+                    value_arrayElement = computeStmt.getValue(fatherTable);
+                    var.getArrayValue().add(value_arrayElement);
+                }
+                return new GlobalVar(new GlobalVarIr(name, type, arrDeclStmt.getBracket(), n1, n2, var.getArrayValue()));
+            } else {
+                return new GlobalVar(new GlobalVarIr(name, type, arrDeclStmt.getBracket(), n1, n2, null));
+            }
+        }
 
         //非数组
-        int value = varDeclStmt.getValue(fatherTable);
-        VarSymbolTable var = fatherTable.searchVar(name,fatherTable,true);
-        var.setTag("@"+name);
-        var.setValue(value);
-        return new GlobalVar(new GlobalVarIr(name,type,value));
+        else {
+            int value = varDeclStmt.getValue(fatherTable);
+            VarSymbolTable var = fatherTable.searchVar(name, fatherTable, true);
+            var.setTag("@" + name);
+            var.setValue(value);
+            return new GlobalVar(new GlobalVarIr(name, type, value));
+        }
     }
 
+
     public GlobalFunc handleGlobalFunctions(FuncDeclStmt funcDeclStmt,SymbolTable symbolTable) {
+        this.blocks = funcDeclStmt.getBlocks();
         nowReg = 0;//函数从0开始
         String name = funcDeclStmt.getName();
         String type = funcDeclStmt.getReturnType();
         FuncSymbolTable funcSymbolTable = (FuncSymbolTable) symbolTable;
         FuncDeclIR funcDeclIR = funcDeclStmt.getIr();
-        ArrayList<Instr> instrs = new ArrayList<>();
         BlockSymbolTable paras = funcSymbolTable.getParams();
         if (paras != null) {
             for (SymbolTable para : paras.getSymbolTables()) {
@@ -132,27 +163,30 @@ public class Generator {
                 }
             }
         }
-        getReg();
+        String funTag = "%" + getReg();
+        BasicBlock funBasicBlock = new BasicBlock(funTag,0);
+        this.nowBasicBlock = funBasicBlock;
         if (paras != null) {
             for (SymbolTable para : paras.getSymbolTables()) {
                 if (para.compareType(SymbolType.var) && ((VarSymbolTable)para).isParameter()) {
                     String tag = "%" + getReg();
                     //这里的思路使，形参先把tag设置成他的值寄存器（实际上应该要存储地址寄存器但是还没有分配），分配了地址寄存器后，再改回来
-                    instrs.add(new AllocaIR(tag));
-                    instrs.add(new StoreIR(para.getTag(), tag));
+                    this.nowBasicBlock.inputInstr(new AllocaIR(tag,"i32"));
+                    this.nowBasicBlock.inputInstr(new StoreIR(para.getTag(), tag, "i32"));
                     para.setTag(tag);//改回来
                 }
             }
         }
-        instrs.addAll(handleCompoundStmt(funcDeclStmt.getStmts(),paras));
-        GlobalFunc globalFunc = new GlobalFunc(funcDeclIR,instrs);
+        handleCompoundStmt(funcDeclStmt.getStmts(),paras);
+        GlobalFunc globalFunc = new GlobalFunc(funcDeclIR,this.blocks);
+        blocks.add(this.nowBasicBlock);
         return globalFunc;
     }
 
     public GlobalFunc handleMain(FuncDeclStmt funcDeclStmt,BlockSymbolTable paras) {
+        this.blocks = funcDeclStmt.getBlocks();
         nowReg = 0;//函数从0开始
         FuncDeclIR funcDeclIR = funcDeclStmt.getIr();
-        ArrayList<Instr> instrs = new ArrayList<>();
         if (paras != null) {
             for (SymbolTable para : paras.getSymbolTables()) {
                 if (para.compareType(SymbolType.var) && ((VarSymbolTable)para).isParameter()) {
@@ -163,49 +197,53 @@ public class Generator {
                 }
             }
         }
-        getReg();
+        String funTag = "%" + getReg();
+        BasicBlock funBasicBlock = new BasicBlock(funTag,0);
+        this.nowBasicBlock = funBasicBlock;
         if (paras != null) {
             for (SymbolTable para : paras.getSymbolTables()) {
                 if (para.compareType(SymbolType.var) && ((VarSymbolTable)para).isParameter()) {
                     String tag = "%" + getReg();
-                    instrs.add(new AllocaIR(tag));
-                    instrs.add(new StoreIR(para.getTag(), tag));
+                    this.nowBasicBlock.inputInstr(new AllocaIR(tag,"i32")); //暂时i32
+                    this.nowBasicBlock.inputInstr(new StoreIR(para.getTag(), tag,"i32"));//暂时i32
                     para.setTag(tag);
                 }
             }
         }
-        instrs.addAll(handleCompoundStmt(funcDeclStmt.getStmts(),paras));
-        GlobalFunc globalFunc = new GlobalFunc(funcDeclIR,instrs);
+        handleCompoundStmt(funcDeclStmt.getStmts(),paras);
+        GlobalFunc globalFunc = new GlobalFunc(funcDeclIR,this.blocks);
+        blocks.add(this.nowBasicBlock);
         return globalFunc;
     }
 
-    public ArrayList<Instr> handleCompoundStmt(CompoundStmt compoundStmt,BlockSymbolTable fatherTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleCompoundStmt(CompoundStmt compoundStmt,BlockSymbolTable fatherTable) {
         ArrayList<Stmt> stmts = compoundStmt.getStmts();
         int numberOfBlockSymbolTable = 0;
         for (Stmt stmt : stmts) {
+            if (this.nowBasicBlock.getEndOfBlock() != null)
+                break;
             if (stmt instanceof VarDeclStmt) {
-                instrs.addAll(handleVarDecl((VarDeclStmt) stmt, fatherTable));
+                handleVarDecl((VarDeclStmt) stmt, fatherTable);
             }  else {
-                instrs.addAll(handleStmt(stmt,fatherTable,numberOfBlockSymbolTable));
-                if (stmt instanceof CompoundStmt || stmt instanceof IfStmt || stmt instanceof ForStmt) { //顺序记录块符号表在fatherTable顺序中第几位
-                    numberOfBlockSymbolTable++;
+                handleStmt(stmt,fatherTable,numberOfBlockSymbolTable);
+                if (stmt instanceof BreakStmt || stmt instanceof ContinueStmt) {
+                    break;
                 }
+                numberOfBlockSymbolTable += checkHasBlock(stmt);
             }
         }
-        return instrs;
+        return ;
     }
 
-    public ArrayList<Instr> handleStmt(Stmt stmt, BlockSymbolTable fatherTable,int numberOfBlockSymbolTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleStmt(Stmt stmt, BlockSymbolTable fatherTable,int numberOfBlockSymbolTable) {
         if (stmt instanceof AssignStmt) {
-            instrs.addAll(handleAssignStmt((AssignStmt) stmt,fatherTable));
+            handleAssignStmt((AssignStmt) stmt,fatherTable);
         } else if (stmt instanceof CompoundStmt) { //注意这里的fatherTable会变化
             BlockSymbolTable nowBlock = fatherTable.searchBlockSymbolTable(numberOfBlockSymbolTable,fatherTable);
             //getReg();//块分配
-            instrs.addAll(handleCompoundStmt((CompoundStmt) stmt, nowBlock));
+            handleCompoundStmt((CompoundStmt) stmt, nowBlock);
         } else if (stmt instanceof ComputeStmt) {
-            instrs.addAll(handleComputerStmt((ComputeStmt) stmt,fatherTable));
+            handleComputerStmt((ComputeStmt) stmt,fatherTable);
         } else if (stmt instanceof ReturnStmt) {
             ReturnStmt returnStmt = (ReturnStmt) stmt;
             boolean returnVoid = returnStmt.returnVoid();
@@ -214,89 +252,171 @@ public class Generator {
                 AddExpStmt addExpStmt = computeStmt.getAddExpStmt();
                 if (addExpStmt.isNum()) {
                     String value = String.valueOf(addExpStmt.getValue());
-                    instrs.add(new ReturnIR(returnVoid,value));
+                    ReturnIR returnIR = new ReturnIR(returnVoid,value);
+                    this.nowBasicBlock.inputInstr(returnIR);
+                    this.nowBasicBlock.setEndOfBlock(returnIR,"return");
                 } else {
-                    instrs.addAll(handleComputerStmt(computeStmt,fatherTable));
-                    instrs.add(new ReturnIR(returnVoid,"%" + (nowReg-1)));
+                    handleComputerStmt(computeStmt,fatherTable);
+                    ReturnIR returnIR = new ReturnIR(returnVoid,"%" + (nowReg-1));
+                    this.nowBasicBlock.inputInstr(returnIR);
+                    this.nowBasicBlock.setEndOfBlock(returnIR,"return");
                 }
             } else {
-                instrs.add(new ReturnIR(returnVoid,null));
+                ReturnIR returnIR = new ReturnIR(returnVoid,null);
+                this.nowBasicBlock.inputInstr(returnIR);
+                this.nowBasicBlock.setEndOfBlock(returnIR,"return");
             }
+
         } else if (stmt instanceof CallExpr) {
             CallExpr callExpr = (CallExpr) stmt;
-            instrs.addAll(handleCallExpr(callExpr,fatherTable));
-        } else if (stmt instanceof ForStmt) {
-            ; //
-        } else if (stmt instanceof IfStmt) {
-            instrs.addAll(handleIfStmt((IfStmt) stmt,fatherTable,numberOfBlockSymbolTable));
-        } else if (stmt instanceof BreakStmt) {
-            ; //
+            handleCallExpr(callExpr,fatherTable);
+        } else if (stmt instanceof ForStmt forStmt) {
+            handleForStmt((ForStmt) stmt, fatherTable, numberOfBlockSymbolTable);
+        } else if (stmt instanceof IfStmt ifStmt) {
+            handleIfStmt((IfStmt) stmt,fatherTable,numberOfBlockSymbolTable);
+        } else if (stmt instanceof BreakStmt breakStmt) {
+            if (this.nowForStmt != null) {
+                BrIR breakBrIR = this.nowForStmt.getEnd();//注意这是共用了同一个指针！
+                this.nowBasicBlock.inputInstr(breakBrIR);
+                this.nowBasicBlock.setEndOfBlock(breakBrIR,"break");
+                //注意这里没有新建块
+            }
         } else if (stmt instanceof ContinueStmt) {
-            ; //
+            if (this.nowForStmt != null) {
+                BrIR continueBrIR = this.nowForStmt.getContinueBrIR();
+                this.nowBasicBlock.inputInstr(continueBrIR);
+                this.nowBasicBlock.setEndOfBlock(continueBrIR,"continue");
+                //注意这里没有新建块
+            }
         }
-        return instrs;
+        return ;
     }
 
-    public ArrayList<Instr> handleIfStmt(IfStmt ifStmt, BlockSymbolTable fatherTable, int numberOfBlockSymbolTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleIfStmt(IfStmt ifStmt, BlockSymbolTable fatherTable, int numberOfBlockSymbolTable) {
         CondStmt condStmt = ifStmt.getCondStmt();
         Stmt thenStmt = ifStmt.getThenStmt();
         Stmt elseStmt = ifStmt.getElseStmt();
 
-        String ifCross = "%" + getReg();
-        BrIR begin = new BrIR(ifCross);
         JumpUnit ifUnit = new JumpUnit();
-        ifUnit.setBegin(begin);
-        instrs.add(begin);//两个地方都要加
-        instrs.add(new LabelLineIR(ifCross));
 
-        instrs.addAll(handleCondStmt(condStmt,fatherTable,ifUnit));
-        //if 开始;
-        instrs.addAll(handleStmt(thenStmt,fatherTable,numberOfBlockSymbolTable));
-        if (elseStmt == null) {
-            BrIR elseBegin = null;
-
-            String endReg = "%" + getReg();
-            BrIR end = new BrIR(endReg);//if执行结束的无条件跳转
-            instrs.add(end);
-            instrs.add(new LabelLineIR(endReg));
-            ifUnit.setLorExpFailCrossBrLine(endReg);
-
-            ifUnit.setEnd(end);
-            ifUnit.setElseBegin(elseBegin);
-
-        } else {
-            String elseBeginLine = "%" + getReg();
-            BrIR ifEnd = new BrIR("ifEnd");//尚未确定
-            instrs.add(ifEnd);
-            instrs.add(new LabelLineIR(elseBeginLine));
-            ifUnit.setLorExpFailCrossBrLine(elseBeginLine);//回填之前lorExp失败的跳转
-            instrs.addAll(handleStmt(elseStmt,fatherTable,numberOfBlockSymbolTable));
-
-            String End = "%" + getReg();
-            ifEnd.setUnconditionalJump_reg(End);//回填之前if结束的跳转
-            instrs.add(new BrIR(End));//else结束的跳转
+        String ifCross = handleBlockEnd();
+        handleBlockBegin(ifCross);
+        handleCondStmt(condStmt,fatherTable,ifUnit);
+        //处理if块语句;
+        handleStmt(thenStmt,fatherTable,numberOfBlockSymbolTable);
+        //if块收尾
+        String endReg = "%" + getReg();
+        //回填之前失败的跳转
+        ifUnit.setLorExpFailCrossBrLine(endReg);
+        if (this.nowBasicBlock.getEndOfBlock() == null) { //没有continue和break、return
+            BrIR end = new BrIR("if's end br");//if执行结束的无条件跳转
+            this.nowBasicBlock.inputInstr(end);
+            this.nowBasicBlock.setEndOfBlock(end,"blockBr");
+            ifUnit.setIfBr(end);//如果有continue和break、return,这个地方就是空的不需要回填
         }
 
-        return instrs;
+        //
+        int newBlockNo = this.nowBasicBlock.getBlockNo() + 1;
+        BasicBlock basicBlock = new BasicBlock(endReg,newBlockNo);
+        this.blocks.add(this.nowBasicBlock);
+        this.nowBasicBlock = basicBlock;
+        LabelLineIR beginLabel = new LabelLineIR(endReg);
+        this.nowBasicBlock.inputInstr(beginLabel);
+
+        if (elseStmt == null) {
+            if (ifUnit.getIfBr() != null) { //ifUnit.getIfBr是空，说明因为由continue和break导致没填
+                ifUnit.getIfBr().setUnconditionalJump_reg(endReg);//回填之前if结束的跳转
+            }
+        } else if (elseStmt != null) {
+//            if (thenStmt instanceof CompoundStmt || thenStmt instanceof IfStmt || thenStmt instanceof ForStmt) { //if块是 块
+//                handleStmt(elseStmt,fatherTable,numberOfBlockSymbolTable+1);
+//            }
+//            else { // if块只是语句
+//                handleStmt(elseStmt, fatherTable, numberOfBlockSymbolTable);
+//            }
+            //else结束
+            int numOfIfBlocks = checkHasBlock(thenStmt);
+            handleStmt(elseStmt, fatherTable, numberOfBlockSymbolTable + numOfIfBlocks);
+            String elseEnd = "%" + getReg();
+            if (ifUnit.getIfBr() != null) {
+                ifUnit.getIfBr().setUnconditionalJump_reg(elseEnd);//回填之前if结束的跳转
+            }
+            if (this.nowBasicBlock.getEndOfBlock() == null) {
+                BrIR end = new BrIR(elseEnd);
+                this.nowBasicBlock.inputInstr(end);
+                this.nowBasicBlock.setEndOfBlock(end,"blockBr");
+                blocks.add(this.nowBasicBlock);
+            }
+
+            //新块
+            this.nowBasicBlock = new BasicBlock(elseEnd,this.nowBasicBlock.getBlockNo() + 1);
+            this.nowBasicBlock.inputInstr(new LabelLineIR(elseEnd));
+        }
     }
 
-    public ArrayList<Instr> handleCondStmt(CondStmt condStmt, BlockSymbolTable fatherTable,JumpUnit ifUnit) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleForStmt (ForStmt forStmt, BlockSymbolTable fatherTable, int numberOfBlockSymbolTable) {
+        CondStmt condStmt = forStmt.getCondStmt();
+        AssignStmt assignStmt1 = forStmt.getAssignStmt1();
+        AssignStmt assignStmt2 = forStmt.getAssignStmt2();
+        Stmt stmt = forStmt.getForStmt();
+        handleAssignStmt(assignStmt1,fatherTable);
+
+        String forCross = handleBlockEnd();
+        BrIR before = (BrIR) this.nowBasicBlock.getEndOfBlock();
+        handleBlockBegin(forCross);
+
+        JumpUnit forUnit = new JumpUnit();
+        forUnit.setBegin(before);
+        forUnit.setEnd(new BrIR("for exit")); //先设置！这样break也可以用这个end
+        forUnit.setContinueBrIR(new BrIR("for continue"));//continue使用的入口
+
+        //保存之前的forUnit
+        JumpUnit forStmtBefore = this.nowForStmt;
+        //修改全局JumpUnit
+        this.nowForStmt = forUnit;
+
+        handleCondStmt(condStmt,fatherTable,forUnit);
+        //处理for块语句
+        handleStmt(stmt,fatherTable,numberOfBlockSymbolTable);
+
+        //处理assignStmt2
+        //continue入口
+        String continueCross = handleBlockEnd();
+        //回填continue
+        forUnit.getContinueBrIR().setUnconditionalJump_reg(continueCross);
+        handleBlockBegin(continueCross);
+        handleAssignStmt(assignStmt2,fatherTable);
+
+        //跳回
+        //instrs.add(forUnit.getBegin());
+        this.nowBasicBlock.inputInstr(forUnit.getBegin());
+        //跳出
+        String endReg = "%" + getReg();
+        handleBlockBegin(endReg);
+        forUnit.setLorExpFailCrossBrLine(endReg);
+        //把end回填
+        forUnit.getEnd().setUnconditionalJump_reg(endReg);
+
+        //全局JumpUnit改回来
+        this.nowForStmt = forStmtBefore;
+    }
+
+    public void handleCondStmt(CondStmt condStmt, BlockSymbolTable fatherTable,JumpUnit ifUnit) {
+        if (condStmt == null)
+            return;
         LorExp lorExp = condStmt.getLorExp();
-        instrs.addAll(handleLorExp(lorExp,fatherTable,ifUnit));
-        return instrs;
+        handleLorExp(lorExp,fatherTable,ifUnit);
+        return ;
     }
 
-    public ArrayList<Instr> handleLorExp(LorExp lorExp, BlockSymbolTable fatherTable,JumpUnit ifUnit) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleLorExp(LorExp lorExp, BlockSymbolTable fatherTable,JumpUnit ifUnit) {
         ArrayList<LAndExp> lAndExps = lorExp.getlAndExps();
         //instrs.addAll(handleLAndExp(lAndExps.get(0),fatherTable,ifUnit));
         String tag1;
         ArrayList<BrIR> acceptBrIR = new ArrayList<>();
         ArrayList<BrIR> wrongBrIR = new ArrayList<>();
         for (int i = 0; i < lAndExps.size(); i++) {
-            instrs.addAll(handleLAndExp(lAndExps.get(i),fatherTable,wrongBrIR));
+            handleLAndExp(lAndExps.get(i),fatherTable,wrongBrIR);
 
             if (lAndExps.get(i).isNum()) {
                 tag1 = String.valueOf(lAndExps.get(i).getValue());
@@ -306,13 +426,22 @@ public class Generator {
             }
 
             //如果 && 全对， 那么应该无条件跳转到if入口，但是这个入口现在还不知道在哪，先收集着
+            //当前的基本块不再是LAnd块，而是Lor块
             BrIR accept = new BrIR("null");
-            acceptBrIR.add(accept);//现在还不知道入口，结束的时候统一设置
-            instrs.add(accept);
+            //cond应该不会出现continue break 和 return
+            this.nowBasicBlock.inputInstr(accept);
+            this.nowBasicBlock.setEndOfBlock(accept,"blockBr");
+            acceptBrIR.add(accept);//现在还不知道入口，结束的时候统一设置 最后的land块的br
 
             //如果不对，设置下一个||的入口点！并为之前的wrong设置入口
+            // 新块
             String wrongLine = "%" + getReg();
-            instrs.add(new LabelLineIR(wrongLine));
+            int newBlockNo = this.nowBasicBlock.getBlockNo() + 1;
+            BasicBlock basicBlock = new BasicBlock(wrongLine,newBlockNo);
+            this.blocks.add(this.nowBasicBlock);
+            this.nowBasicBlock = basicBlock;
+            this.nowBasicBlock.inputInstr(new LabelLineIR(wrongLine));
+            //
             for (BrIR wrong : wrongBrIR) {
                 wrong.setWrong(wrongLine);
             }
@@ -321,28 +450,32 @@ public class Generator {
         }
         // 注意，最后一个||如果没有成功，那么要跳到if后的地方！这个还没有处理，所以应该先记录下来
         BrIR lorExpFailCross = new BrIR("LorExpWrong");
-        ifUnit.setLorExpFailCross(nowReg-1,lorExpFailCross);
-        instrs.add(lorExpFailCross);
-        //if 开始
-        int ifBeginLine = getReg();
-        BrIR ifBegin = new BrIR("%" + ifBeginLine);
-        ifUnit.setIfBegin(ifBegin);
-        instrs.add(new LabelLineIR("%" + ifBeginLine));
+        ifUnit.setLorExpFailCross(lorExpFailCross);
+        this.nowBasicBlock.inputInstr(lorExpFailCross);
+        this.nowBasicBlock.setEndOfBlock(lorExpFailCross,"blockBr");
+        //if 开始 或者 for 开始 之前按if写的，问题不大
+        //if块
+        String ifBeginLine = "%" + getReg();
+        int newBlockNo = this.nowBasicBlock.getBlockNo() + 1;
+        BasicBlock basicBlock = new BasicBlock(ifBeginLine,newBlockNo);
+        this.blocks.add(this.nowBasicBlock);
+        this.nowBasicBlock = basicBlock;
+        this.nowBasicBlock.inputInstr(new LabelLineIR(ifBeginLine));
+        //回填
         for (BrIR accept : acceptBrIR) {
-            accept.setUnconditionalJump_reg("%" + ifBeginLine);
+            accept.setUnconditionalJump_reg(ifBeginLine);
         }
-
-        return instrs;
+        //回填结束
+        return ;
     }
 
-    public ArrayList<Instr> handleLAndExp(LAndExp lAndExp, BlockSymbolTable fatherTable,ArrayList<BrIR> wrongBrIR) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleLAndExp(LAndExp lAndExp, BlockSymbolTable fatherTable,ArrayList<BrIR> wrongBrIR) {
         ArrayList<EqExp> eqExps = lAndExp.getEqExps();
 
         //instrs.addAll(handleEqExp(eqExps.get(0),fatherTable));
         String tag1;
         for (int i = 0; i < eqExps.size(); i++) {
-            instrs.addAll(handleEqExp(eqExps.get(i),fatherTable));
+            handleEqExp(eqExps.get(i),fatherTable);
             if (eqExps.get(i).isNum()) {
                 tag1 = String.valueOf(eqExps.get(i).getValue());
             } else {
@@ -352,24 +485,30 @@ public class Generator {
 
             //最后的结果需要和0比较
             String cond = "%" + getReg();
-            instrs.add(new IcmpIR(cond,"ne","0",tag1));
+            this.nowBasicBlock.inputInstr(new IcmpIR(cond,"ne","0",tag1));
             String accept = "%" + getReg();
             BrIR brIR = new BrIR(cond,accept,"lAndExpWrong");
             wrongBrIR.add(brIR);
-            instrs.add(brIR);
-            instrs.add(new LabelLineIR(accept)); //条件语句对了的话，跳转label
+            this.nowBasicBlock.inputInstr(brIR);
+            this.nowBasicBlock.setEndOfBlock(brIR,"blockBr");
+            //新块
+            int newBlockNo = this.nowBasicBlock.getBlockNo() + 1;
+            BasicBlock basicBlock = new BasicBlock(accept,newBlockNo);
+            this.blocks.add(this.nowBasicBlock);
+            this.nowBasicBlock = basicBlock;
+            LabelLineIR beginLabel = new LabelLineIR(accept);
+            this.nowBasicBlock.inputInstr(beginLabel);
             //注意都是指针！以后ifUnit改，instr也会改
         }
         //&&的最后accept,就可以直接跳转到if入口
 
-        return instrs;
+        return ;
     }
 
-    public ArrayList<Instr> handleEqExp(EqExp eqExp, BlockSymbolTable fatherTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleEqExp(EqExp eqExp, BlockSymbolTable fatherTable) {
         ArrayList<RelExp> relExps = eqExp.getRelExps();
 
-        instrs.addAll(handleRelExp(relExps.get(0),fatherTable));
+        handleRelExp(relExps.get(0),fatherTable);
         String tag1;
         String tag2;
         if (relExps.get(0).isNum()) {
@@ -380,7 +519,7 @@ public class Generator {
         }
 
         for (int i = 2; i < relExps.size(); i += 2) {
-            instrs.addAll(handleRelExp(relExps.get(i),fatherTable));
+            handleRelExp(relExps.get(i),fatherTable);
             if (relExps.get(i).isNum()) {
                 tag2 = String.valueOf(relExps.get(i).getValue());
             } else {
@@ -394,29 +533,27 @@ public class Generator {
             String transferReg = "%" + getReg();
             if (op.isOp()) {
                 if (op.getType() == 1) {
-                    instrs.add(new IcmpIR(transferReg,"eq",tag1,tag2));
+                    this.nowBasicBlock.inputInstr(new IcmpIR(transferReg,"eq",tag1,tag2));
                 } else if (op.getType() == 2) {
-                    instrs.add(new IcmpIR(transferReg,"ne",tag1,tag2));
+                    this.nowBasicBlock.inputInstr(new IcmpIR(transferReg,"ne",tag1,tag2));
                 }
             }
 
             String result = "%" + getReg();
-            instrs.add(new ZextIR(result, transferReg));
+            this.nowBasicBlock.inputInstr(new ZextIR(result, transferReg));
 
             tag1 = result; //上一次的结果下一次用，如果还有的话
         }
 
-        return instrs;
+        return ;
     }
 
-    public ArrayList<Instr> handleRelExp(RelExp relExp, BlockSymbolTable fatherTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleRelExp(RelExp relExp, BlockSymbolTable fatherTable) {
         ArrayList<AddExpStmt> addExpStmts = relExp.getAddExpStmts();
 
         String tag1;
         String tag2;
-        ArrayList<Instr> tmp = handleAddExpStmt(addExpStmts.get(0),fatherTable);
-        instrs.addAll(tmp);
+        handleAddExpStmt(addExpStmts.get(0),fatherTable);
         if (addExpStmts.get(0).isNum()) {
             tag1 = String.valueOf(addExpStmts.get(0).getValue());
         } else {
@@ -432,7 +569,7 @@ public class Generator {
 //            instrs.add(new BrIR(cond,"%" + getReg(),null));
 //        } else {
             for (int i = 2; i < addExpStmts.size(); i += 2) {
-                instrs.addAll(handleAddExpStmt(addExpStmts.get(i),fatherTable));
+                handleAddExpStmt(addExpStmts.get(i),fatherTable);
                 if (addExpStmts.get(i).isNum()) {
                     tag2 = String.valueOf(addExpStmts.get(i).getValue());
                 } else {
@@ -447,17 +584,17 @@ public class Generator {
                 String transferReg = "%" + getReg();
                 if (op.isOp()) {
                     if (op.getType() == 1) {
-                        instrs.add(new IcmpIR(transferReg, "slt", tag1, tag2));
+                        this.nowBasicBlock.inputInstr(new IcmpIR(transferReg, "slt", tag1, tag2));
                     } else if (op.getType() == 2) {
-                        instrs.add(new IcmpIR(transferReg, "sle", tag1, tag2));
+                        this.nowBasicBlock.inputInstr(new IcmpIR(transferReg, "sle", tag1, tag2));
                     } else if (op.getType() == 3) {
-                        instrs.add(new IcmpIR(transferReg, "sgt", tag1, tag2));
+                        this.nowBasicBlock.inputInstr(new IcmpIR(transferReg, "sgt", tag1, tag2));
                     } else if (op.getType() == 4) {
-                        instrs.add(new IcmpIR(transferReg, "sge", tag1, tag2));
+                        this.nowBasicBlock.inputInstr(new IcmpIR(transferReg, "sge", tag1, tag2));
                     }
                 }
                 String result = "%" + getReg();
-                instrs.add(new ZextIR(result, transferReg));
+                this.nowBasicBlock.inputInstr(new ZextIR(result, transferReg));
 
                 tag1 = result; //上一次的结果下一次用，如果还有的话
             }
@@ -469,18 +606,16 @@ public class Generator {
             //这个应该是land和lor用的
         // }
 
-        return instrs;
+        return ;
     }
 
-    public ArrayList<Instr> handleCallExpr(CallExpr callExpr,BlockSymbolTable fatherTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleCallExpr(CallExpr callExpr,BlockSymbolTable fatherTable) {
         String name = callExpr.getFunctionName();
         if (name.equals("printf")) {
             ArrayList<ComputeStmt> paras = callExpr.getParas();
 
-            Pair pair = handleCallParas(paras,fatherTable);
-            instrs.addAll(pair.getInstrs());
-            ArrayList<String> place = pair.getPlace();
+            ArrayList<String> place = handleCallParas(paras,fatherTable);
+            //this.nowBasicBlock.inputInstr(pair.getInstrs());
             int realPara = 0;//index of printf
             String format = callExpr.getFormat();
             char[] format_char = format.toCharArray();
@@ -489,19 +624,19 @@ public class Generator {
                     //输出值
                     ArrayList<String> tmp = new ArrayList<>();//para 因为putint只有一个参数，所以每次都新建一个，加入place的元素
                     tmp.add(place.get(realPara++));
-                    instrs.add(new CallIR("putint","void", tmp, null));
+                    this.nowBasicBlock.inputInstr(new CallIR("putint","void", tmp, null));
                     i++;//d
                 } else if (format_char[i] == '\\' && i + 1 < format_char.length-1 && format_char[i+1] == 'n') {
                     ArrayList<String> tmp = new ArrayList<>();
                     tmp.add("10");
-                    instrs.add(new CallIR("putch","void", tmp, null));
+                    this.nowBasicBlock.inputInstr(new CallIR("putch","void", tmp, null));
                     i++;//n
                 }
                 else {
                     ArrayList<String> tmp = new ArrayList<>();
                     int c = format_char[i];
                     tmp.add(String.valueOf(c));
-                    instrs.add(new CallIR("putch","void", tmp, null));
+                    this.nowBasicBlock.inputInstr(new CallIR("putch","void", tmp, null));
                 }
             }
         } else {
@@ -509,9 +644,8 @@ public class Generator {
             String returnType = funcSymbolTable.getReturnType();
             ArrayList<ComputeStmt> paras = callExpr.getParas();
 
-            Pair pair = handleCallParas(paras,fatherTable);
-            instrs.addAll(pair.getInstrs());
-            ArrayList<String> place = pair.getPlace();
+            ArrayList<String> place = handleCallParas(paras,fatherTable);
+            //this.nowBasicBlock.inputInstr(pair.getInstrs());
             String storeReg;
             if (returnType.equals("void")) {
                 storeReg = null;
@@ -519,13 +653,13 @@ public class Generator {
                 storeReg = "%" + getReg();
             }
 
-            instrs.add(new CallIR(name,returnType,place,storeReg));
+            this.nowBasicBlock.inputInstr(new CallIR(name,returnType,place,storeReg));
         }
-        return instrs;
     }
 
-    public ArrayList<Instr> handleAssignStmt(AssignStmt assignStmt, BlockSymbolTable fatherTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleAssignStmt(AssignStmt assignStmt, BlockSymbolTable fatherTable) {
+        if (assignStmt.getlVal() == null)
+            return;
         LVal lVal = assignStmt.getlVal();
         ComputeStmt computeStmt = assignStmt.getComputeStmt();
         boolean isGetInt = assignStmt.isGetInt();
@@ -535,10 +669,10 @@ public class Generator {
             VarSymbolTable var = fatherTable.searchVar(name,fatherTable,false);
             String pointer = var.getTag();
             if (isGetInt) {
-                instrs.add(new CallIR("getint","int",new ArrayList<>(),"%" + getReg()));
-                instrs.add(new StoreIR("%"+(nowReg-1),pointer));
+                this.nowBasicBlock.inputInstr(new CallIR("getint","int",new ArrayList<>(),"%" + getReg()));
+                this.nowBasicBlock.inputInstr(new StoreIR("%"+(nowReg-1),pointer,"i32"));
             } else {
-                instrs.addAll(handleComputerStmt(computeStmt,fatherTable));
+                handleComputerStmt(computeStmt,fatherTable);
                 String storeValueReg;
                 AddExpStmt addExpStmt = computeStmt.getAddExpStmt();
                 if (addExpStmt.isNum()) {
@@ -546,30 +680,89 @@ public class Generator {
                 } else {
                     storeValueReg = "%" + (nowReg-1); //如果不是全局变量，值保存在nowReg前一个寄存器里
                 }
-                instrs.add(new StoreIR(storeValueReg,pointer));
+                this.nowBasicBlock.inputInstr(new StoreIR(storeValueReg,pointer,"i32"));
             }
         } else { //
             ;
         }
-        return instrs;
+        return ;
     }
 
-    public ArrayList<Instr> handleVarDecl(VarDeclStmt varDeclStmt, BlockSymbolTable fatherTable) {//函数块内临时变量
-        ArrayList<Instr> instrs = new ArrayList<>();
-        if (varDeclStmt instanceof ArrDeclStmt) {
-            return null;//未处理
+    public void handleVarDecl(VarDeclStmt varDeclStmt, BlockSymbolTable fatherTable) {//函数块内临时变量
+        //Const，全局和与普通声明区别在于，前者明确是常量表达式，可以直接计算出来。后者要用handle
+        if (varDeclStmt instanceof ArrDeclStmt arrDeclStmt) {
+            //看看这是什么类型的数组
+            String arrPointer = "%" + getReg();
+            String integerStore;
+            String type;
+            String name = arrDeclStmt.getName();
+            int n1 = arrDeclStmt.getN1();
+            int n2 = arrDeclStmt.getN2();
+            int bracket = arrDeclStmt.getBracket();
+            if (bracket == 1) {
+                type = "[" + n2 + " x i32]";
+                this.nowBasicBlock.inputInstr(new AllocaIR(arrPointer,type));
+            } else {
+                type = "[" + n1 + " x " + "[" + n2 + " x i32]]";
+                this.nowBasicBlock.inputInstr(new AllocaIR(arrPointer,type));
+            }
+            AddExpStmt addExpStmt;
+            ArrayList<String> indexs;
+            ArrayList<ComputeStmt> values = arrDeclStmt.getValue();
+            if (values != null) {
+                if (arrDeclStmt.isConst()) {
+                    for (int i = 0; i < values.size(); i++) {
+                        ComputeStmt computeStmt = values.get(i);
+                        int value = computeStmt.getValue(fatherTable);
+                        indexs = new ArrayList<>();
+                        indexs.add("0");
+                        if (bracket == 1) {
+                            indexs.add(String.valueOf(i));
+                        } else if (bracket == 2){
+                            indexs.add(String.valueOf(i / n2));
+                            indexs.add(String.valueOf(i % n2));
+                        }
+                        integerStore = "%" + getReg();
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(integerStore,type,arrPointer,indexs));
+                        this.nowBasicBlock.inputInstr(new StoreIR(String.valueOf(value),integerStore,"i32"));
+                    }
+                } else {
+                    for (int i = 0; i < values.size(); i++) {
+                        ComputeStmt computeStmt = values.get(i);
+                        handleComputerStmt(computeStmt, fatherTable);
+                        addExpStmt = computeStmt.getAddExpStmt();
+                        indexs = new ArrayList<>();
+                        indexs.add("0");
+                        if (bracket == 1) {
+                            indexs.add(String.valueOf(i));
+                        } else if (bracket == 2){
+                            indexs.add(String.valueOf(i / n2));
+                            indexs.add(String.valueOf(i % n2));
+                        }
+                        integerStore = "%" + getReg();
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(integerStore,type,arrPointer,indexs));
+                        if (addExpStmt.isNum()) {
+                            this.nowBasicBlock.inputInstr(new StoreIR(String.valueOf(addExpStmt.getValue()),integerStore,"i32"));
+                        } else {
+                            this.nowBasicBlock.inputInstr(new StoreIR("%" + (nowReg-2), integerStore,"i32"));
+                            //注意！这里是nowReg-2,因为前面的nowReg-1被取出现的指针占据了，跟普通声明不一样，普通声明不需要取指针，直接alloc的就行，数组不一样
+                        }
+                    }
+                    fatherTable.setTagForVar(name,arrPointer);
+                }
+            }
+            return ;
         } else { //非数组
             String tag = "%" + getReg();
-            instrs.add(new AllocaIR(tag));
+            this.nowBasicBlock.inputInstr(new AllocaIR(tag,"i32"));
             String name = varDeclStmt.getName();
             if (varDeclStmt.isConst()) { //常量直接求值
                 int value = varDeclStmt.getValue(fatherTable);
-                instrs.add(new StoreIR("%"+value,tag));
+                this.nowBasicBlock.inputInstr(new StoreIR(String.valueOf(value),tag,"i32"));
             } else {
                 if (varDeclStmt.hasInitialValue()) { //需要详细求值
                     ComputeStmt computeStmt = varDeclStmt.getInitialValue();
-                    ArrayList<Instr> tmp = handleComputerStmt(computeStmt,fatherTable);
-                    instrs.addAll(tmp);
+                    handleComputerStmt(computeStmt,fatherTable);
 
                     AddExpStmt addExpStmt = computeStmt.getAddExpStmt();
                     String place;
@@ -579,29 +772,27 @@ public class Generator {
                         place = "%" + (nowReg-1);
                     }
 
-                    instrs.add(new StoreIR(place,tag));
+                    this.nowBasicBlock.inputInstr(new StoreIR(place,tag,"i32"));
                 }
             }
             fatherTable.setTagForVar(name,tag);//setTag放到最后！因为怕int c = c * 2这种情况，如果setTag在前面，就先分配空间地址了，这样就默认已经存在了
-            return instrs;
+            return ;
         }
     }
 
-    public ArrayList<Instr> handleComputerStmt(ComputeStmt computeStmt, BlockSymbolTable fatherTable) {
+    public void handleComputerStmt(ComputeStmt computeStmt, BlockSymbolTable fatherTable) {
         AddExpStmt addExpStmt = computeStmt.getAddExpStmt();
-        return handleAddExpStmt(addExpStmt,fatherTable);
+        handleAddExpStmt(addExpStmt,fatherTable);
     }
 
-    public ArrayList<Instr> handleAddExpStmt(AddExpStmt addExpStmt, BlockSymbolTable fatherTable) {//tag的分配是严格地从左往右，从下到上，这样可以保证tag值连续
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleAddExpStmt(AddExpStmt addExpStmt, BlockSymbolTable fatherTable) {//tag的分配是严格地从左往右，从下到上，这样可以保证tag值连续
         ArrayList<MulExpStmt> mulExpStmts = addExpStmt.getMulExpStmts();
 
         //first
         String tag1;
         String tag2;
         String tag3;
-        ArrayList<Instr> tmp1 = handleMulExpStmt(mulExpStmts.get(0),fatherTable);
-        instrs.addAll(tmp1);
+        handleMulExpStmt(mulExpStmts.get(0),fatherTable);
         if (mulExpStmts.get(0).isNum()) {
             tag1 = String.valueOf(mulExpStmts.get(0).getValue());
         } else {
@@ -609,8 +800,7 @@ public class Generator {
             tag1 = "%" + preReg;
         }
         for (int i = 2;i < mulExpStmts.size();i += 2) { //只可能奇数个
-            ArrayList<Instr> tmp2 = handleMulExpStmt(mulExpStmts.get(i),fatherTable);
-            instrs.addAll(tmp2);
+            handleMulExpStmt(mulExpStmts.get(i),fatherTable);
 
             if (mulExpStmts.get(i).isNum()) {
                 tag2 = String.valueOf(mulExpStmts.get(i).getValue());
@@ -621,27 +811,25 @@ public class Generator {
 
             tag3 = "%" + getReg();//最后的值
             if (mulExpStmts.get(i-1) instanceof Op op && op.getLexType() == LexType.PLUS) {
-                instrs.add(new AddIR(tag1,tag2,tag3));
+                this.nowBasicBlock.inputInstr(new AddIR(tag1,tag2,tag3));
             } else if (mulExpStmts.get(i-1) instanceof Op op && op.getLexType() == LexType.MINU){
-                instrs.add(new SubIR(tag1,tag2,tag3));
+                this.nowBasicBlock.inputInstr(new SubIR(tag1,tag2,tag3));
             } else {
                 System.err.println("handleAddExpStmtError!");
             }
             tag1 = tag3;//前值
         }
-        return instrs;
+        return ;
     }
 
-    public ArrayList<Instr> handleMulExpStmt(MulExpStmt mulExpStmt,BlockSymbolTable fatherTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleMulExpStmt(MulExpStmt mulExpStmt,BlockSymbolTable fatherTable) {
         ArrayList<UnaryExpStmt> unaryExpStmts = mulExpStmt.getUnaryExpStmts();
 
         //first
         String tag1;
         String tag2;
         String tag3;
-        ArrayList<Instr> tmp1 = handleUnaryExpStmt(unaryExpStmts.get(0),fatherTable);
-        instrs.addAll(tmp1);
+        handleUnaryExpStmt(unaryExpStmts.get(0),fatherTable);
         if (unaryExpStmts.get(0).getType() == 3) { //只是一个数字
             tag1 = String.valueOf(unaryExpStmts.get(0).getNumber());
         } else {
@@ -649,8 +837,7 @@ public class Generator {
             tag1 = "%" + preReg;
         }
         for (int i = 2; i< unaryExpStmts.size(); i += 2) {
-            ArrayList<Instr> tmp2 = handleUnaryExpStmt(unaryExpStmts.get(i),fatherTable);
-            instrs.addAll(tmp2);
+            handleUnaryExpStmt(unaryExpStmts.get(i),fatherTable);
             if (unaryExpStmts.get(i).getType() == 3) { //只是一个数字
                 tag2 = String.valueOf(unaryExpStmts.get(i).getNumber());
             } else {
@@ -660,40 +847,139 @@ public class Generator {
             tag3 = "%" + getReg();
             //('*' | '/' | '%')
             if (unaryExpStmts.get(i-1) instanceof  Op op && op.getLexType() == LexType.MULT) {
-                instrs.add(new MulIR(tag1,tag2,tag3));
+                this.nowBasicBlock.inputInstr(new MulIR(tag1,tag2,tag3));
             } else if (unaryExpStmts.get(i-1) instanceof  Op op && op.getLexType() == LexType.DIV) {
-                instrs.add(new SdivIR(tag1,tag2,tag3));
+                this.nowBasicBlock.inputInstr(new SdivIR(tag1,tag2,tag3));
             } else if (unaryExpStmts.get(i-1) instanceof  Op op && op.getLexType() == LexType.MOD) {
-                instrs.add(new SremIR(tag1,tag2,tag3));
+                this.nowBasicBlock.inputInstr(new SremIR(tag1,tag2,tag3));
             } else {
                 System.err.println("handleMulExpStmtError!");
             }
             tag1 = tag3;
         }
-        return instrs;
+        return ;
     }
 
-    public ArrayList<Instr> handleUnaryExpStmt(UnaryExpStmt unaryExpStmt, BlockSymbolTable fatherTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public void handleUnaryExpStmt(UnaryExpStmt unaryExpStmt, BlockSymbolTable fatherTable) {
         int type = unaryExpStmt.getType();
         if (type == 1) { //(Exp)
-            instrs.addAll(handleComputerStmt(unaryExpStmt.getComputeStmt(),fatherTable));
-            return instrs;
+            handleComputerStmt(unaryExpStmt.getComputeStmt(),fatherTable);
         } else if (type == 2) { //LVal
             LVal lVal = unaryExpStmt.getlVal();
             String name = lVal.getLValName();
             VarSymbolTable var = fatherTable.searchVar(name,fatherTable,false);
             String tag = var.getTag();
-            int storeReg = getReg();
-            instrs.add(new LoadIR("%"+storeReg, tag));
-            return instrs;
+            /*
+                2维
+                a 0 0
+                a[1] 0 0    0 1
+                a[1][1] 0 1   0 1
+                1维
+                b 0 0
+                b[1] 0 1
+                根本原因在于，一维数组和取一维数组中的整数返回的类型是一样的，因此出现了这样的情况
+             */
+            if (var.getBracket() == 0) { // 非数组
+                int storeReg = getReg();
+                this.nowBasicBlock.inputInstr(new LoadIR("%" + storeReg, tag));//未处理数组
+            } else { //数组
+                String storeReg;
+                String arrType;
+                String arrPointer = var.getTag();
+                ArrayList<String> indexs;
+                if (var.getBracket() == 2) { //原本是二维数组
+                    arrType = getType(var.getN1(), var.getN2());
+                    if (lVal.getBracket() == 0) { //a
+                        indexs = new ArrayList<>();
+                        indexs.add(String.valueOf(0));
+                        indexs.add(String.valueOf(0));
+                        storeReg = "%" + getReg();
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
+                    } else if (lVal.getBracket() == 1) { //a[1]
+                        indexs = new ArrayList<>();
+                        ComputeStmt n2 = lVal.getN2();
+                        handleComputerStmt(n2,fatherTable);
+                        AddExpStmt addExpStmt = n2.getAddExpStmt();
+                        if (addExpStmt.isNum()) {
+                            indexs.add(String.valueOf(0));
+                            indexs.add(String.valueOf(addExpStmt.getValue()));
+                        } else {
+                            indexs.add(String.valueOf(0));
+                            indexs.add("%" + (nowReg - 1));
+                        }
+                        storeReg = "%" + getReg();
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
+                        arrPointer = storeReg;
+                        storeReg = "%" + getReg();
+                        arrType = getType(0, var.getN2());
+                        indexs = new ArrayList<>();
+                        indexs.add(String.valueOf(0));
+                        indexs.add(String.valueOf(0));
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
+                    } else if (lVal.getBracket() == 2) { //a[1][1]
+                        indexs = new ArrayList<>();
+                        ComputeStmt n1 = lVal.getN1();
+                        handleComputerStmt(n1,fatherTable);
+                        AddExpStmt addExpStmt1 = n1.getAddExpStmt();
+                        if (addExpStmt1.isNum()) {
+                            indexs.add(String.valueOf(0));
+                            indexs.add(String.valueOf(addExpStmt1.getValue()));
+                        } else {
+                            indexs.add(String.valueOf(0));
+                            indexs.add("%" + (nowReg - 1));
+                        }
+                        storeReg = "%" + getReg();
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
+                        arrPointer = storeReg;
+                        storeReg = "%" + getReg();
+                        arrType = getType(0, var.getN2());
+                        indexs = new ArrayList<>();
+                        ComputeStmt n2 = lVal.getN2();
+                        handleComputerStmt(n2,fatherTable);
+                        AddExpStmt addExpStmt2 = n2.getAddExpStmt();
+                        if (addExpStmt2.isNum()) {
+                            indexs.add(String.valueOf(0));
+                            indexs.add(String.valueOf(addExpStmt2.getValue()));
+                        } else {
+                            indexs.add(String.valueOf(0));
+                            indexs.add("%" + (nowReg - 1));
+                        }
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
+                    }
+                } else { //原本是一维数组
+                    arrType = getType(0, var.getN2());
+                    if (lVal.getBracket() == 0) {
+                        indexs = new ArrayList<>();
+                        indexs.add(String.valueOf(0));
+                        indexs.add(String.valueOf(0));
+                        storeReg = "%" + getReg();
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
+                    } else {
+                        ComputeStmt n2 = lVal.getN2();
+                        handleComputerStmt(n2,fatherTable);
+                        AddExpStmt addExpStmt = n2.getAddExpStmt();
+                        indexs = new ArrayList<>();
+                        if (addExpStmt.isNum()) {
+                            indexs.add(String.valueOf(0));
+                            indexs.add(String.valueOf(addExpStmt.getValue()));
+                        } else {
+                            indexs.add(String.valueOf(0));
+                            indexs.add("%" + (nowReg - 1));
+                        }
+                        storeReg = "%" + getReg();
+                        this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
+                    }
+                }
+                String pointer = "%" + (nowReg - 1);
+                this.nowBasicBlock.inputInstr(new LoadIR("%" + getReg(),pointer));
+            }
         } else if (type == 3) {
-            return instrs;
+            ;
         } else if (type == 4) {
             CallExpr callExpr = unaryExpStmt.getCallExpr();
-            instrs.addAll(handleCallExpr(callExpr,fatherTable));
+            handleCallExpr(callExpr,fatherTable);
         } else if (type == 5) {
-            instrs.addAll(handleUnaryExpStmt(unaryExpStmt.getUnaryExpStmt(),fatherTable));
+            handleUnaryExpStmt(unaryExpStmt.getUnaryExpStmt(),fatherTable);
             String reg1;
             String reg2;
             String reg3;
@@ -703,35 +989,34 @@ public class Generator {
                     reg1 = "0";
                     reg2 = String.valueOf(subUnaryExpStmt.getNumber());
                     reg3 = "%" + getReg();
-                    instrs.add(new AddIR(reg1,reg2,reg3));
+                    this.nowBasicBlock.inputInstr(new AddIR(reg1,reg2,reg3));
                 } else if (unaryExpStmt.getOp().getLexType() == LexType.MINU) {
                     reg1 = "0";
                     reg2 = String.valueOf(subUnaryExpStmt.getNumber());
                     reg3 = "%" + getReg();
-                    instrs.add(new SubIR(reg1,reg2,reg3));
+                    this.nowBasicBlock.inputInstr(new SubIR(reg1,reg2,reg3));
                 }
             } else {
                 if (unaryExpStmt.getOp().getLexType() == LexType.PLUS) {
                     reg1 = "0";
                     reg2 = "%" + (nowReg-1);
                     reg3 = "%" + getReg();
-                    instrs.add(new AddIR(reg1,reg2,reg3));
+                    this.nowBasicBlock.inputInstr(new AddIR(reg1,reg2,reg3));
                 } else if (unaryExpStmt.getOp().getLexType() == LexType.MINU) {
                     reg1 = "0";
                     reg2 = "%" + (nowReg-1);
                     reg3 = "%" + getReg();
-                    instrs.add(new SubIR(reg1,reg2,reg3));
+                    this.nowBasicBlock.inputInstr(new SubIR(reg1,reg2,reg3));
                 }
             }
         }
-        return instrs;
+        return ;
     }
 
-    public Pair handleCallParas(ArrayList<ComputeStmt> paras, BlockSymbolTable fatherTable) {
-        ArrayList<Instr> instrs = new ArrayList<>();
+    public ArrayList<String> handleCallParas(ArrayList<ComputeStmt> paras, BlockSymbolTable fatherTable) {
         ArrayList<String> place = new ArrayList<>();
         for (ComputeStmt computeStmt : paras) {
-            instrs.addAll(handleComputerStmt(computeStmt,fatherTable));
+            handleComputerStmt(computeStmt,fatherTable);
             AddExpStmt addExpStmt = computeStmt.getAddExpStmt();
             if (addExpStmt.isNum()) {
                 int value = addExpStmt.getValue();
@@ -743,6 +1028,49 @@ public class Generator {
             }
         }
 
-        return new Pair(instrs,place);
+        return place;
+    }
+
+    public String getType(int n1, int n2) {
+        if (n1 == 0) {
+            return "[" + n2 + " x i32]";
+        } else {
+            return "[" + n1 + " x " + "[" + n2 + " x i32]]";
+        }
+    }
+
+    public String handleBlockEnd() { //块的结束
+        String newBlockLabel = "%" + getReg();
+        BrIR oldBlockBr = new BrIR(newBlockLabel);
+        this.nowBasicBlock.inputInstr(oldBlockBr);
+        //这个就是基本块的末尾
+        this.nowBasicBlock.setEndOfBlock(oldBlockBr,"blockBr");//set在后面
+        return newBlockLabel;
+    }
+
+    public void handleBlockBegin(String newBlockLabel) {
+        //前基本块结束
+        int newBlockNo = this.nowBasicBlock.getBlockNo() + 1;
+        BasicBlock basicBlock = new BasicBlock(newBlockLabel,newBlockNo);
+        this.blocks.add(this.nowBasicBlock);
+        this.nowBasicBlock = basicBlock;
+        LabelLineIR beginLabel = new LabelLineIR(newBlockLabel);
+        this.nowBasicBlock.inputInstr(beginLabel);
+    }
+
+    public int checkHasBlock(Stmt stmt) {
+        if (stmt == null) {
+            return 0;
+        } else {
+            if (stmt instanceof CompoundStmt) {
+                return 1;
+            } else if (stmt instanceof IfStmt ifStmt) {
+                return checkHasBlock(ifStmt.getThenStmt()) + checkHasBlock(ifStmt.getElseStmt());
+            } else if (stmt instanceof ForStmt forStmt) {
+                return checkHasBlock(forStmt.getForStmt());
+            } else {
+                return 0;
+            }
+        }
     }
 }

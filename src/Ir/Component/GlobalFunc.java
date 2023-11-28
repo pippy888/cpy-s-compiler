@@ -1,5 +1,6 @@
 package Ir.Component;
 
+import AST.BasicBlock;
 import Ir.IRInstr.FuncDeclIR;
 import Ir.IRInstr.Instr;
 
@@ -9,11 +10,11 @@ import java.util.List;
 public class GlobalFunc {
     private FuncDeclIR funcDeclIR;
 
-    private ArrayList<Instr> content;
+    private ArrayList<BasicBlock> blocks;
 
-    public GlobalFunc(FuncDeclIR funcDeclIR, ArrayList<Instr> content) {
+    public GlobalFunc(FuncDeclIR funcDeclIR, ArrayList<BasicBlock> blocks) {
         this.funcDeclIR = funcDeclIR;
-        this.content = content;
+        this.blocks = blocks;
     }
 
     public String genIr() {
@@ -22,9 +23,13 @@ public class GlobalFunc {
         stringBuilder.append(s);
         stringBuilder.append(" {");
         stringBuilder.append("\n");
-        for (Instr instr : content) {
-            stringBuilder.append(instr.genIr());
-            stringBuilder.append("\n");
+
+        for (BasicBlock basicBlock : blocks) {
+            ArrayList<Instr> instrs = basicBlock.getInstrs();
+            for (Instr instr : instrs) {
+                stringBuilder.append(instr.genIr());
+                stringBuilder.append('\n');
+            }
         }
         stringBuilder.append("}");
         return stringBuilder.toString();

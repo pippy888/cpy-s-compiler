@@ -54,25 +54,25 @@ public class UnaryExpStmt extends MulExpStmt{
                 this.type = 2;
                 String name = priNode.getNodes().get(0).getNodeName();
                 if (priNode.getNodes().size() == 1) {
-                    this.lVal = new LVal(name,0,0,0);
+                    this.lVal = new LVal(name,0,null,null);
                 }
                 else if (priNode.getNodes().size() == 4) {
                     //一维数组
                     GrammarNode constExp = priNode.getNodes().get(2);
                     ComputeStmt constStmt = BuildAST.getComputerStmt(constExp);
-                    int constValue = constStmt.getValue(null);//因为这时候不会用常量
-                    this.lVal = new LVal(name,1,0,constValue);
+                    //int constValue = constStmt.getValue(null);//因为这时候不会用常量
+                    this.lVal = new LVal(name,1,null,constStmt);
 
                 } else if (priNode.getNodes().size() == 7) {
                     GrammarNode constExp1 = priNode.getNodes().get(2);
                     ComputeStmt constStmt1 = BuildAST.getComputerStmt(constExp1);
-                    int constValue1 = constStmt1.getValue(null);
+                    //int constValue1 = constStmt1.getValue(null);
 
                     GrammarNode constExp2 = priNode.getNodes().get(5);
                     ComputeStmt constStmt2 = BuildAST.getComputerStmt(constExp2);
-                    int constValue2 = constStmt2.getValue(null);
+                    //int constValue2 = constStmt2.getValue(null);
 
-                    this.lVal = new LVal(name,2,constValue1,constValue2);
+                    this.lVal = new LVal(name,2,constStmt1,constStmt2);
                 }
             } else {
                 this.type = 3;
@@ -113,7 +113,21 @@ public class UnaryExpStmt extends MulExpStmt{
         } else if (type == 2) {
             String name = this.lVal.getLValName();
             VarSymbolTable var = fatherTable.searchVar(name,fatherTable,false);
-            return var.getValue();
+            if (this.lVal.getBracket() == 0) {
+                return var.getValue();
+            } else if (lVal.getBracket() == 1) {
+                ArrayList<Integer> arrayValue = var.getArrayValue();
+                int n2 = this.lVal.getN2().getValue(fatherTable);
+                //System.out.println(n2);
+                return arrayValue.get(n2);
+            } else { //2维数组
+                ArrayList<Integer> arrayValue = var.getArrayValue();
+                int n1 = this.lVal.getN1().getValue(fatherTable);
+                int n2 = this.lVal.getN2().getValue(fatherTable);
+                int sizeN2 = var.getN2();
+                int offset = n1 * sizeN2 + n2;
+                return arrayValue.get(offset);
+            }
         } else if (this.type == 3) {
             return this.number;
         } else if (this.type == 5) {

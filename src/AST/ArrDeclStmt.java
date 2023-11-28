@@ -3,7 +3,7 @@ package AST;
 import java.util.ArrayList;
 
 public class ArrDeclStmt extends VarDeclStmt{
-    private ArrayList<ComputeStmt> value;
+    private ArrayList<ComputeStmt> value;//数组初始值
 
     private int n1;
 
@@ -17,5 +17,21 @@ public class ArrDeclStmt extends VarDeclStmt{
         this.n2 = n2;
         this.value = value;
         this.bracket = bracket;
+    }
+
+    public int getBracket() {
+        return bracket;
+    }
+
+    public int getN1() {
+        return n1;
+    }
+
+    public int getN2() {
+        return n2;
+    }
+
+    public ArrayList<ComputeStmt> getValue() {
+        return value;
     }
 }

@@ -15,7 +15,7 @@ public class ComputeStmt extends Stmt{
         this.addExpStmt = addExpStmt;
     }
 
-    public int getValue(BlockSymbolTable fatherTable) {
+    public int getValue(BlockSymbolTable fatherTable) {//如果是常量表达式用这个
         return addExpStmt.getConstValue(fatherTable);
     }
 

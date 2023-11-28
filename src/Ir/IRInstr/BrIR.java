@@ -23,6 +23,10 @@ public class BrIR extends Instr{
         this.wrong = wrong;
     }
 
+    public boolean isUnconditionalJump() {
+        return unconditionalJump;
+    }
+
     public String genIr() {
         if (unconditionalJump) {
             return "br label " + unconditionalJump_reg; // + "\n\n" + unconditionalJump_reg + ":";
@@ -41,5 +45,17 @@ public class BrIR extends Instr{
 
     public void setUnconditionalJump_reg(String unconditionalJump_reg) {
         this.unconditionalJump_reg = unconditionalJump_reg;
+    }
+
+    public String getUnconditionalJump_reg() {
+        return unconditionalJump_reg;
+    }
+
+    public String getAccept() {
+        return accept;
+    }
+
+    public String getWrong() {
+        return wrong;
     }
 }

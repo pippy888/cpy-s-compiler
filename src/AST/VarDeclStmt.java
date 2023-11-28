@@ -10,9 +10,7 @@ public class VarDeclStmt extends Stmt{
 
     private boolean isFuncPara;
 
-    private ComputeStmt initialValue;
-
-    private int value;
+    private ComputeStmt initialValue; //非数组初始值
 
     private String name;
 
