@@ -1,16 +1,19 @@
 package Ir.IRInstr;
 
 public class LoadIR extends Instr{
-    private String tag;
+    private String store;
 
     private String pointer;
 
-    public LoadIR(String tag, String pointer) {
-        this.tag = tag;
+    private String type;
+
+    public LoadIR(String store, String pointer,String type) {
+        this.store = store;
         this.pointer = pointer;
+        this.type = type;
     }
 
     public String genIr() {
-        return tag + " = load i32, i32* " + pointer;
+        return store + " = load " + type + "," + type + " * " + pointer;
     }
 }

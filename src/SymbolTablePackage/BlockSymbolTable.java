@@ -24,12 +24,14 @@ public class BlockSymbolTable extends SymbolTable{
         return fatherTable;
     }
 
-    public void setTagForVar(String name, String tag) {
+    public VarSymbolTable setTagForVar(String name, String tag) {
         for (SymbolTable symbolTable : symbolTables) {
-            if (symbolTable instanceof  VarSymbolTable && symbolTable.getName().equals(name)) {
-                symbolTable.setTag(tag);
+            if (symbolTable instanceof  VarSymbolTable varSymbolTable && varSymbolTable.getName().equals(name)) {
+                varSymbolTable.setTag(tag);
+                return varSymbolTable;
             }
         }
+        return null;
     }
 
     public VarSymbolTable searchVar(String name,BlockSymbolTable fatherTable,boolean define) {

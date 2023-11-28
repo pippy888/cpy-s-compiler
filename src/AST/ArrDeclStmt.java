@@ -11,12 +11,15 @@ public class ArrDeclStmt extends VarDeclStmt{
 
     private int bracket;
 
+    private String dimension2pointerType;
+
     public ArrDeclStmt(boolean isGlobal, boolean isConst, boolean isFuncPara,ArrayList<ComputeStmt> value,int n1, int n2, int bracket, String name) {
         super(isGlobal,isConst,isFuncPara,null, name);
         this.n1 = n1;
         this.n2 = n2;
         this.value = value;
         this.bracket = bracket;
+        this.dimension2pointerType = "[" + n2 + " x " + "i32]*";
     }
 
     public int getBracket() {
@@ -33,5 +36,9 @@ public class ArrDeclStmt extends VarDeclStmt{
 
     public ArrayList<ComputeStmt> getValue() {
         return value;
+    }
+
+    public String getDimension2pointerType() {
+        return dimension2pointerType;
     }
 }

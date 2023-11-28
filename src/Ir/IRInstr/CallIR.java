@@ -1,5 +1,9 @@
 package Ir.IRInstr;
 
+import AST.ArrDeclStmt;
+import AST.VarDeclStmt;
+import SymbolTablePackage.VarSymbolTable;
+
 import java.util.ArrayList;
 
 public class CallIR extends Instr{
@@ -11,11 +15,14 @@ public class CallIR extends Instr{
 
     private String storeReg;//有返回值
 
-    public CallIR(String name, String type, ArrayList<String> paras, String storeReg) {
+    ArrayList<VarDeclStmt> parasType;//自定义函数参数集合，如果没有，就是默认的i32
+
+    public CallIR(String name, String type, ArrayList<String> paras, String storeReg,ArrayList<VarDeclStmt> parasType) {
         this.name = name;
         this.type = type;
         this.paras = paras;
         this.storeReg = storeReg;
+        this.parasType = parasType;
     }
 
     public String genIr() {
@@ -24,15 +31,37 @@ public class CallIR extends Instr{
         String s3 = type.equals("int") ? "i32 " : "void ";
         String s4 = "@" + name + "(";
         StringBuilder sb = new StringBuilder();
-        if (paras.size() >= 1) {
-            sb.append("i32 ").append(paras.get(0));
+        if (paras.size() >= 1) { //有可能没有参数？
+            if (parasType != null) {
+                sb.append(getParaType(parasType.get(0)));//说明调用了自己写的函数，不是putch之类
+            } else {
+                sb.append("i32 ");
+            }
+            sb.append(paras.get(0));
         }
         for (int i = 1; i < paras.size(); i++) {
             sb.append(", ");
-            sb.append("i32 ").append(paras.get(i));
+            if (parasType != null) {
+                sb.append(getParaType(parasType.get(i)));
+            } else {
+                sb.append("i32 ");
+            }
+            sb.append(paras.get(i));
         }
         sb.append(")");
         String s5 = sb.toString();
         return s1 + s2 + s3 + s4 + s5;
+    }
+
+    public String getParaType(VarDeclStmt varDeclStmt) {
+        if (varDeclStmt instanceof ArrDeclStmt arrDeclStmt) {
+            if (arrDeclStmt.getBracket() == 2) {
+                return "[" + arrDeclStmt.getN2() + " x i32]* ";
+            } else {
+                return "i32* ";
+            }
+        } else {
+            return "i32 ";
+        }
     }
 }
