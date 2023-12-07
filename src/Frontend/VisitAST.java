@@ -18,6 +18,10 @@ public class VisitAST {
 
     private BlockSymbolTable stackSymbol;
 
+    private String outputError;
+
+    private int inFor = 0;//如果进入for循环，则加1，退出减1
+
 
     public VisitAST(GrammarNode ast, ExceptionController ec) {
         this.ast = ast;
@@ -28,8 +32,8 @@ public class VisitAST {
 
     public BlockSymbolTable getSymbolTableAndHandleError() {
         runAST();
-        String output = outputEcError();
-        IoFile.outputContentToFile_error(output);
+        this.outputError = outputEcError();
+        IoFile.outputContentToFile_error(outputError);
         return stackSymbol;
     }
 
@@ -62,11 +66,12 @@ public class VisitAST {
         //node.getNodes().get(0) 就是ConstDecl
         GrammarNode ConstOrVarDecl = node.getNodes().get(0);
         for (int i = 0; i < ConstOrVarDecl.getNodes().size(); i++) {
+            bracket = 0;
             if (compareNodeName(ConstOrVarDecl, i,"ConstDef")
                 || compareNodeName(ConstOrVarDecl, i,"VarDef")
             ) {
-                GrammarNode nodeConstDef = ConstOrVarDecl.getNodes().get(i);
-                for (GrammarNode tmp : nodeConstDef.getNodes()) {
+                GrammarNode nodeConstOrVarDef = ConstOrVarDecl.getNodes().get(i);
+                for (GrammarNode tmp : nodeConstOrVarDef.getNodes()) {
                     Token token;
                     if (tmp instanceof Token) {
                         token = (Token) tmp;
@@ -84,6 +89,8 @@ public class VisitAST {
                             }
                         }
                         */
+                    } else if (tmp.getNodeName().equals("InitVal")) {
+                        getInitVal(tmp,fatherTable);
                     }
                 }
                 VarSymbolTable var = new VarSymbolTable(this.nowLevel,type,line,isConst,name,n1,n2,bracket,false,isGlobal);
@@ -206,14 +213,15 @@ public class VisitAST {
                 ec.addException(HandleException.makeReviseConstException(tokenLVal));
             }
 
-            if (node.getNodes().get(node.getNodes().size() - 1).getNodeName().equals("Exp")) {
-                handleExp(node.getNodes().get(node.getNodes().size() - 1),fatherTable);
+            if (node.getNodes().get(node.getNodes().size() - 2).getNodeName().equals("Exp")) {//注意最后一个是;
+                handleExp(node.getNodes().get(node.getNodes().size() - 2),fatherTable);
             }
         } else if (stmtDetailNode.getNodeName().equals("Exp")) {
             handleExp(stmtDetailNode,fatherTable);
         } else if (stmtDetailNode instanceof Token token && token.compareLexType(LexType.FORTK)) {
 //            nowLevel++;
 //            BlockSymbolTable forBlock = new BlockSymbolTable(nowLevel, token.getLineNum(), "for",fatherTable);
+            inFor++;
             for (GrammarNode forNodeDetail : node.getNodes()) {
                 if (forNodeDetail.getNodeName().equals("ForStmt")) {
                     Token LValNode = (Token) forNodeDetail.getNodes().get(0).getNodes().get(0);//forstmt -> lval -> idenfr
@@ -231,11 +239,12 @@ public class VisitAST {
                     }
                 }
             }
+            inFor--;
             //addSymbol(fatherTable,forBlock);
         }  else if (stmtDetailNode instanceof Token && ( ((Token) stmtDetailNode) .compareLexType(LexType.CONTINUETK)) ||
                 stmtDetailNode instanceof Token && ( ((Token) stmtDetailNode) .compareLexType(LexType.BREAKTK))
         ) {
-            if (!whetherInForBlock(fatherTable)) {
+            if (inFor <= 0) {
                 ec.addException(HandleException.makeNotFunBlockHasContinueOrBreak((Token) stmtDetailNode));
             }
         } else if (stmtDetailNode.getNodeName().equals("Block")) {
@@ -380,6 +389,8 @@ public class VisitAST {
         } else { //函数调用 返回值一定是int型、void型
             FuncSymbolTable func = null;
             Token tokenOfFunc = null;
+            boolean hasFuncParams = false;//假定函数没有参数，否则一旦调用函数没有参数，就会跳过判断参数个数匹配！
+            ArrayList<GrammarNode> realParas = new ArrayList<>();//实参列表
             for (GrammarNode unaryExpNode : node.getNodes()) {
                 SymbolTable tmp;
                 if (unaryExpNode instanceof Token && ((Token) unaryExpNode).compareLexType(LexType.IDENFR)) {
@@ -388,13 +399,13 @@ public class VisitAST {
                         func = (FuncSymbolTable) tmp;
                     }
                 } else if(unaryExpNode.getNodeName().equals("FuncRParams")) {
-                    ArrayList<GrammarNode> realParas = new ArrayList<>();
+                    hasFuncParams = true;
                     for (GrammarNode realParaNode : unaryExpNode.getNodes()) {
                         if (realParaNode.getNodeName().equals("Exp")) {
                             realParas.add(realParaNode);
                         }
                     }
-                    // 参数数量匹配
+                    // 参数数量匹配(调用时有写参数）
                     if (func != null) {
                         if (func.getParasCount() != realParas.size()) {
                             ec.addException(HandleException.makeFuncParasCountNoMatch(tokenOfFunc));
@@ -411,7 +422,11 @@ public class VisitAST {
                     }
                 }
             }
+
             if (func != null) {
+                if (!hasFuncParams && func.getParasCount() != 0) { //如果没有写实参
+                    ec.addException(HandleException.makeFuncParasCountNoMatch(tokenOfFunc));
+                }
                 if (func.getReturnType().equals("int")) {
                     return new Value(0,0);
                 } else {
@@ -493,5 +508,19 @@ public class VisitAST {
             stringBuilder.append(myException.getLine()).append(" ").append(myException.getErrorType()).append("\n");
         }
         return stringBuilder.toString();
+    }
+
+    public void getInitVal(GrammarNode initialNode,BlockSymbolTable fatherTable) {
+        for (GrammarNode tmp : initialNode.getNodes()) {
+            if (tmp.getNodeName().equals("Exp")) {
+                Value value = handleExp(tmp,fatherTable);
+            } else if (tmp.getNodeName().equals("InitVal")) {
+                getInitVal(tmp,fatherTable);
+            }
+        }
+    }
+
+    public String getOutputError() {
+        return this.outputError;
     }
 }

@@ -20,6 +20,9 @@ public class Compiler {
         GrammarNode ast = getGrammar(tokens,ec);
         VisitAST visitAST = new VisitAST(ast,ec);
         BlockSymbolTable table = visitAST.getSymbolTableAndHandleError();
+        if (!visitAST.getOutputError().equals("")) {
+            return;
+        }
         BuildAST buildAST = new BuildAST(ast);
         ASTroot asTroot = buildAST.getRoot();
         Generator generator = new Generator(table,asTroot);

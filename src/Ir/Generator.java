@@ -56,6 +56,7 @@ import SymbolTablePackage.SymbolTable;
 import SymbolTablePackage.SymbolType;
 import SymbolTablePackage.VarSymbolTable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Stack;
 
 import Frontend.IoFile;
@@ -131,13 +132,25 @@ public class Generator {
                 }
                 return new GlobalVar(new GlobalVarIr(name, type, arrDeclStmt.getBracket(), n1, n2, var.getArrayValue()));
             } else {
-                return new GlobalVar(new GlobalVarIr(name, type, arrDeclStmt.getBracket(), n1, n2, null));
+                ArrayList<Integer> obj ;
+                if (n1 == 0) {
+                    obj = new ArrayList<Integer>(Collections.nCopies(n2,0));
+                } else {
+                    obj = new ArrayList<Integer>(Collections.nCopies(n1*n2,0));
+                }
+                var.setArrayValue(obj);
+                return new GlobalVar(new GlobalVarIr(name, type, arrDeclStmt.getBracket(), n1, n2, obj));
             }
         }
 
         //非数组
         else {
-            int value = varDeclStmt.getValue(fatherTable);
+            int value;
+            if (varDeclStmt.hasInitialValue()) {
+                value = varDeclStmt.getValue(fatherTable);
+            } else {
+                value = 0; //没有初始值默认是0
+            }
             VarSymbolTable var = fatherTable.searchVar(name, fatherTable, true);
             var.setTag("@" + name);
             var.setValue(value);
@@ -381,9 +394,8 @@ public class Generator {
                 BrIR end = new BrIR(elseEnd);
                 this.nowBasicBlock.inputInstr(end);
                 this.nowBasicBlock.setEndOfBlock(end,"blockBr");
-                blocks.add(this.nowBasicBlock);
             }
-
+            blocks.add(this.nowBasicBlock);
             //新块
             this.nowBasicBlock = new BasicBlock(elseEnd,this.nowBasicBlock.getBlockNo() + 1);
             this.nowBasicBlock.inputInstr(new LabelLineIR(elseEnd));
@@ -711,91 +723,95 @@ public class Generator {
         String name = lVal.getLValName();
         VarSymbolTable var = fatherTable.searchVar(name,fatherTable,false);
         String pointer = var.getTag();
-        if (bracket == 0 && isGetInt) {
+        String storeValueReg;
+        String arrPointer;
+        if (isGetInt) {
             this.nowBasicBlock.inputInstr(new CallIR("getint","int",new ArrayList<>(),"%" + getReg(),null));
-            this.nowBasicBlock.inputInstr(new StoreIR("%"+(nowReg-1),pointer,"i32"));
+            storeValueReg = "%" + (nowReg - 1);
+            //this.nowBasicBlock.inputInstr(new StoreIR(storeValueReg,pointer,"i32"));
         } else {
-            handleComputerStmt(computeStmt,fatherTable);
-            String storeValueReg;
+            handleComputerStmt(computeStmt, fatherTable);
+
             AddExpStmt addExpStmt = computeStmt.getAddExpStmt();
-            String storeReg;
-            String arrPointer;
+
             if (addExpStmt.isNum()) {
                 storeValueReg = String.valueOf(addExpStmt.getValue());
             } else {
-                storeValueReg = "%" + (nowReg-1); //如果不是全局变量，值保存在nowReg前一个寄存器里
-            }
-            if (bracket == 0) {
-                this.nowBasicBlock.inputInstr(new StoreIR(storeValueReg,pointer,"i32"));
-            } else if (bracket == 1) { //注意，在赋值语句中，在左边的只能是整数
-                if (var.isParameter())  {
-                    storeReg = "%" + getReg();
-                    this.nowBasicBlock.inputInstr(new LoadIR(storeReg, pointer, "i32*"));
-                } else {
-                    storeReg = pointer;
-                }
-                ComputeStmt n2 = lVal.getN2();
-                handleComputerStmt(n2,fatherTable);
-                AddExpStmt addExpStmtN2 = n2.getAddExpStmt();
-                String indexN2;
-                if (addExpStmtN2.isNum()) {
-                    indexN2 = String.valueOf(addExpStmtN2.getValue());
-                } else {
-                    indexN2 = "%" + (nowReg - 1);
-                }
-                ArrayList<String> indexs = new ArrayList<>();
-                String arrType = "i32";
-                if (!var.isParameter()) {//如果不是指针，不需要前面带0，type就是i32
-                    indexs.add(String.valueOf(0));
-                    arrType = getType(0, var.getN2());
-                    //不是指针会变大一点。。所以前面有个0
-                }
-                indexs.add(indexN2);
-                arrPointer = "%" + getReg();
-                this.nowBasicBlock.inputInstr(new GetelementptrIR(arrPointer,arrType,storeReg,indexs));
-                this.nowBasicBlock.inputInstr(new StoreIR(storeValueReg,arrPointer,"i32"));
-            } else {
-                String arrType;
-                if (var.isParameter()) {
-                    arrType = getType(0, var.getN2());
-                    storeReg = "%" + getReg();
-                    this.nowBasicBlock.inputInstr(new LoadIR(storeReg,pointer,arrType + "*"));
-                } else {
-                    storeReg = pointer;
-                }
-                ComputeStmt n1 = lVal.getN1();
-                handleComputerStmt(n1,fatherTable);
-                AddExpStmt addExpStmtN1 = n1.getAddExpStmt();
-                String indexN1;
-                if (addExpStmtN1.isNum()) {
-                    indexN1 = String.valueOf(addExpStmtN1.getValue());
-                } else {
-                    indexN1 = "%" + (nowReg - 1);
-                }
-
-                ComputeStmt n2 = lVal.getN2();
-                handleComputerStmt(n2,fatherTable);
-                AddExpStmt addExpStmtN2 = n2.getAddExpStmt();
-                String indexN2;
-                if (addExpStmtN2.isNum()) {
-                    indexN2 = String.valueOf(addExpStmtN2.getValue());
-                } else {
-                    indexN2 = "%" + (nowReg - 1);
-                }
-
-                ArrayList<String> indexs = new ArrayList<>();
-                arrType = getType(0, var.getN2());
-                if (!var.isParameter()) {//如果前面不是指针，前面不用带0，类型就是
-                    arrType = getType(var.getN1(), var.getN2());
-                    indexs.add(String.valueOf(0));
-                }
-                indexs.add(indexN1);
-                indexs.add(indexN2);
-                arrPointer = "%" + getReg();
-                this.nowBasicBlock.inputInstr(new GetelementptrIR(arrPointer,arrType,storeReg,indexs));
-                this.nowBasicBlock.inputInstr(new StoreIR(storeValueReg,arrPointer,"i32"));
+                storeValueReg = "%" + (nowReg - 1); //如果不是全局变量，值保存在nowReg前一个寄存器里
             }
         }
+        String storeReg;
+        if (bracket == 0) {
+            this.nowBasicBlock.inputInstr(new StoreIR(storeValueReg,pointer,"i32"));
+        } else if (bracket == 1) { //注意，在赋值语句中，在左边的只能是整数
+            if (var.isParameter())  {
+                storeReg = "%" + getReg();
+                this.nowBasicBlock.inputInstr(new LoadIR(storeReg, pointer, "i32*"));
+            } else {
+                storeReg = pointer;
+            }
+            ComputeStmt n2 = lVal.getN2();
+            handleComputerStmt(n2,fatherTable);
+            AddExpStmt addExpStmtN2 = n2.getAddExpStmt();
+            String indexN2;
+            if (addExpStmtN2.isNum()) {
+                indexN2 = String.valueOf(addExpStmtN2.getValue());
+            } else {
+                indexN2 = "%" + (nowReg - 1);
+            }
+            ArrayList<String> indexs = new ArrayList<>();
+            String arrType = "i32";
+            if (!var.isParameter()) {//如果不是指针，不需要前面带0，type就是i32
+                indexs.add(String.valueOf(0));
+                arrType = getType(0, var.getN2());
+                //不是指针会变大一点。。所以前面有个0
+            }
+            indexs.add(indexN2);
+            arrPointer = "%" + getReg();
+            this.nowBasicBlock.inputInstr(new GetelementptrIR(arrPointer,arrType,storeReg,indexs));
+            this.nowBasicBlock.inputInstr(new StoreIR(storeValueReg,arrPointer,"i32"));
+        } else {
+            String arrType;
+            if (var.isParameter()) {
+                arrType = getType(0, var.getN2());
+                storeReg = "%" + getReg();
+                this.nowBasicBlock.inputInstr(new LoadIR(storeReg,pointer,arrType + "*"));
+            } else {
+                storeReg = pointer;
+            }
+            ComputeStmt n1 = lVal.getN1();
+            handleComputerStmt(n1,fatherTable);
+            AddExpStmt addExpStmtN1 = n1.getAddExpStmt();
+            String indexN1;
+            if (addExpStmtN1.isNum()) {
+                indexN1 = String.valueOf(addExpStmtN1.getValue());
+            } else {
+                indexN1 = "%" + (nowReg - 1);
+            }
+
+            ComputeStmt n2 = lVal.getN2();
+            handleComputerStmt(n2,fatherTable);
+            AddExpStmt addExpStmtN2 = n2.getAddExpStmt();
+            String indexN2;
+            if (addExpStmtN2.isNum()) {
+                indexN2 = String.valueOf(addExpStmtN2.getValue());
+            } else {
+                indexN2 = "%" + (nowReg - 1);
+            }
+
+            ArrayList<String> indexs = new ArrayList<>();
+            arrType = getType(0, var.getN2());
+            if (!var.isParameter()) {//如果前面不是指针，前面不用带0，类型就是
+                arrType = getType(var.getN1(), var.getN2());
+                indexs.add(String.valueOf(0));
+            }
+            indexs.add(indexN1);
+            indexs.add(indexN2);
+            arrPointer = "%" + getReg();
+            this.nowBasicBlock.inputInstr(new GetelementptrIR(arrPointer,arrType,storeReg,indexs));
+            this.nowBasicBlock.inputInstr(new StoreIR(storeValueReg,arrPointer,"i32"));
+        }
+
         return ;
     }
 
@@ -809,6 +825,9 @@ public class Generator {
             String name = arrDeclStmt.getName();
             int n1 = arrDeclStmt.getN1();
             int n2 = arrDeclStmt.getN2();
+            VarSymbolTable varSymbolTable = fatherTable.setTagForVar(name,arrPointer);
+            varSymbolTable.setN1(n1);
+            varSymbolTable.setN2(n2);
             int bracket = arrDeclStmt.getBracket();
             if (bracket == 1) {
                 type = "[" + n2 + " x i32]";
@@ -822,9 +841,11 @@ public class Generator {
             ArrayList<ComputeStmt> values = arrDeclStmt.getValue();
             if (values != null) {
                 if (arrDeclStmt.isConst()) {
+                    VarSymbolTable constArr = fatherTable.searchVar(name,fatherTable,true);
                     for (int i = 0; i < values.size(); i++) {
                         ComputeStmt computeStmt = values.get(i);
                         int value = computeStmt.getValue(fatherTable);
+                        constArr.addArrayValue(value);
                         indexs = new ArrayList<>();
                         indexs.add("0");
                         if (bracket == 1) {
@@ -860,9 +881,6 @@ public class Generator {
                         }
                     }
                 }
-                VarSymbolTable varSymbolTable = fatherTable.setTagForVar(name,arrPointer);
-                varSymbolTable.setN1(n1);
-                varSymbolTable.setN2(n2);
             }
             return ;
         } else { //非数组
@@ -871,6 +889,8 @@ public class Generator {
             String name = varDeclStmt.getName();
             if (varDeclStmt.isConst()) { //常量直接求值
                 int value = varDeclStmt.getValue(fatherTable);
+                VarSymbolTable constVar = fatherTable.searchVar(name,fatherTable,true);
+                constVar.setValue(value);//和全局数组一样，要保存常值，因为全局和常量都可以直接找符号表求值。
                 this.nowBasicBlock.inputInstr(new StoreIR(String.valueOf(value),tag,"i32"));
             } else {
                 if (varDeclStmt.hasInitialValue()) { //需要详细求值
@@ -945,7 +965,15 @@ public class Generator {
         handleUnaryExpStmt(unaryExpStmts.get(0),fatherTable);
         if (unaryExpStmts.get(0).getType() == 3) { //只是一个数字
             tag1 = String.valueOf(unaryExpStmts.get(0).getNumber());
-        } else {
+        } else if (unaryExpStmts.get(0).getType() == 1) {
+            AddExpStmt addExpStmt = unaryExpStmts.get(0).getComputeStmt().getAddExpStmt();
+            if (addExpStmt.isNum()) {
+                tag1 = String.valueOf(addExpStmt.getValue());
+            } else {
+                tag1 = "%" + (nowReg - 1);
+            }
+        }
+        else {
             int preReg = nowReg-1;
             tag1 = "%" + preReg;
         }
@@ -953,10 +981,19 @@ public class Generator {
             handleUnaryExpStmt(unaryExpStmts.get(i),fatherTable);
             if (unaryExpStmts.get(i).getType() == 3) { //只是一个数字
                 tag2 = String.valueOf(unaryExpStmts.get(i).getNumber());
-            } else {
+            } else if (unaryExpStmts.get(i).getType() == 1) {
+                AddExpStmt addExpStmt = unaryExpStmts.get(i).getComputeStmt().getAddExpStmt();
+                if (addExpStmt.isNum()) {
+                    tag2 = String.valueOf(addExpStmt.getValue());
+                } else {
+                    tag2 = "%" + (nowReg - 1);
+                }
+            }
+            else {
                 int preReg = nowReg-1;
                 tag2 = "%" + preReg;
             }
+
             tag3 = "%" + getReg();
             //('*' | '/' | '%')
             if (unaryExpStmts.get(i-1) instanceof  Op op && op.getLexType() == LexType.MULT) {
@@ -1021,7 +1058,7 @@ public class Generator {
                             indexs = new ArrayList<>();
                             indexs.add(String.valueOf(0));
                             String integerPointer = "%" + getReg();
-                            this.nowBasicBlock.inputInstr(new GetelementptrIR(integerPointer,"i32*",storeReg,indexs));
+                            this.nowBasicBlock.inputInstr(new GetelementptrIR(integerPointer,"i32",storeReg,indexs));
                         }
                     } else { // 2
                         storeReg = "%" + getReg();
@@ -1110,7 +1147,6 @@ public class Generator {
                             storeReg = "%" + getReg();
                             this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
                             arrPointer = storeReg;
-                            storeReg = "%" + getReg();
                             arrType = getType(0, var.getN2());
                             indexs = new ArrayList<>();
                             ComputeStmt n2 = lVal.getN2();
@@ -1123,6 +1159,7 @@ public class Generator {
                                 indexs.add(String.valueOf(0));
                                 indexs.add("%" + (nowReg - 1));
                             }
+                            storeReg = "%" + getReg();
                             this.nowBasicBlock.inputInstr(new GetelementptrIR(storeReg,arrType,arrPointer,indexs));
                             String integerPointer = "%" + (nowReg-1);
                             String loadStore = "%" + getReg();
@@ -1184,7 +1221,7 @@ public class Generator {
                 } else if (unaryExpStmt.getOp().getLexType() == LexType.NOT) {
                     String num = String.valueOf(subUnaryExpStmt.getNumber());
                     String compareReg = "%" + getReg();
-                    this.nowBasicBlock.inputInstr(new IcmpIR(compareReg,"ne",num,"0"));
+                    this.nowBasicBlock.inputInstr(new IcmpIR(compareReg,"eq",num,"0"));
                     this.nowBasicBlock.inputInstr(new ZextIR("%" + getReg(),compareReg));
                 }
             } else {
@@ -1201,7 +1238,7 @@ public class Generator {
                 } else if (unaryExpStmt.getOp().getLexType() == LexType.NOT) {
                     String beforeAns = "%" + (nowReg-1);
                     String compareReg = "%" + getReg();
-                    this.nowBasicBlock.inputInstr(new IcmpIR(compareReg,"ne",beforeAns,"0"));
+                    this.nowBasicBlock.inputInstr(new IcmpIR(compareReg,"eq",beforeAns,"0"));
                     this.nowBasicBlock.inputInstr(new ZextIR("%" + getReg(),compareReg));
                 }
             }

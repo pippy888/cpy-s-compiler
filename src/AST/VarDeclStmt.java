@@ -14,6 +14,8 @@ public class VarDeclStmt extends Stmt{
 
     private String name;
 
+    private int constValue;//常量表达式计算后，取这个值
+
     public VarDeclStmt(boolean isGlobal, boolean isConst, boolean isFuncPara, ComputeStmt initial,String name) {
         this.isGlobal = isGlobal;
         this.isConst = isConst;
@@ -40,6 +42,10 @@ public class VarDeclStmt extends Stmt{
 
     public boolean hasInitialValue() { //有的变量没有初始值
         return initialValue != null;
+    }
+
+    public void setInitialValue(ComputeStmt initialValue) {
+        this.initialValue = initialValue;
     }
 
     public ComputeStmt getInitialValue() {

@@ -35,9 +35,15 @@ public class MulExpStmt extends AddExpStmt{
                 unaryExpStmts.add(unaryExpStmt);
             }
         }
+        /*
         if (unaryExpStmts.size() == 1 && unaryExpStmts.get(0).getType() == 3) { //如果只是一个数，为了后面的llvm代码生成
             isNum = true;
             value = unaryExpStmts.get(0).getNumber();
+        }
+         */
+        if (checkUnaryExpIsNum()) {
+            isNum = true;
+            value = getUnaryExpNum();
         }
         return unaryExpStmts;
     }
@@ -75,5 +81,29 @@ public class MulExpStmt extends AddExpStmt{
 
     public int getValue() {
         return value;
+    }
+
+    public boolean checkUnaryExpIsNum() {
+        if (unaryExpStmts.size() == 1 && unaryExpStmts.get(0).getType() == 3) { //如果只是一个数，为了后面的llvm代码生成
+            return true;
+        } else if (unaryExpStmts.size() == 1 && unaryExpStmts.get(0).getType() == 1) {
+             UnaryExpStmt fatherUnaryExp = unaryExpStmts.get(0);
+             AddExpStmt addExpStmt = fatherUnaryExp.getComputeStmt().getAddExpStmt();
+             if (addExpStmt.getMulExpStmts().size() == 1) {
+                 return addExpStmt.getMulExpStmts().get(0).checkUnaryExpIsNum();
+             }
+        }
+        return false;
+    }
+
+    public int getUnaryExpNum() {
+        if (unaryExpStmts.size() == 1 && unaryExpStmts.get(0).getType() == 3) { //如果只是一个数，为了后面的llvm代码生成
+            return unaryExpStmts.get(0).getNumber();
+        } else if (unaryExpStmts.size() == 1 && unaryExpStmts.get(0).getType() == 1) {
+            UnaryExpStmt fatherUnaryExp = unaryExpStmts.get(0);
+            AddExpStmt addExpStmt = fatherUnaryExp.getComputeStmt().getAddExpStmt();
+            return addExpStmt.getValue();
+        }
+        return -99999999;
     }
 }

@@ -58,6 +58,14 @@ public class VarSymbolTable extends SymbolTable {
         return arrayValue;
     }
 
+    public void addArrayValue(int value) {
+        this.arrayValue.add(value);
+    }
+
+    public void setArrayValue(ArrayList<Integer> arrayValue) {
+        this.arrayValue = arrayValue;
+    }
+
     public int getN1() {
         return n1;
     }

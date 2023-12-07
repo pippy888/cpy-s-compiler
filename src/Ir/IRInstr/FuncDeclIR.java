@@ -25,11 +25,10 @@ public class FuncDeclIR extends Instr{
         stringBuilder.append("define dso_local ").append(s).append(" @").append(name);
         stringBuilder.append("(");
         if (paras != null) {
-            if (paras.size() > 0) {
-                stringBuilder.append("i32 %").append(0);
-            }
-            for (int i = 1; i < paras.size(); i++) {
-                stringBuilder.append(", ");
+            for (int i = 0; i < paras.size(); i++) {
+                if (i != 0) {
+                    stringBuilder.append(", ");
+                }
                 //stringBuilder.append("i32 %").append(i);
                 if (paras.get(i) instanceof ArrDeclStmt arrDeclStmt) {
                     if (arrDeclStmt.getBracket() == 1) {
